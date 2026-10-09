@@ -1,0 +1,9 @@
+{
+  "layer_start": 7,
+  "layer_end": 13,
+  "threshold_alpha": 0.75,
+  "threshold_beta": 0.19,
+  "attention_top_k": 5,
+  "morphological_kernel": 5,
+  "min_component_area": 16
+}
