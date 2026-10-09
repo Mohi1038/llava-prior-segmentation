@@ -1,0 +1,40 @@
+# Python environments and local configuration
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Python caches and test tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Packaging and build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Generated inference outputs
+outputs/*
+!outputs/.gitkeep
+*.npy
+*.log
+
+# macOS metadata
+.DS_Store
+
+# Large local model assets and downloaded checkpoints
+checkpoints/*
+!checkpoints/.gitkeep
+.cache/
+.huggingface/
+
+# Local sample media
+image.jpg
+image.png
