@@ -14,9 +14,9 @@ score directly with the paper's full VOC21 result.
 ## Repository and validation
 
 - Workspace: `D:\Programming\CV Project\llava-prior-segmentation`
-- Latest pushed commit: `230c2bb` (`Add VOC evaluation and inference workflows`)
+- Latest pushed commit: `81feecc` (`Add low-memory inference and ablation configs`)
 - Local uncommitted edits may exist; inspect `git status` before changing files.
-- Latest known validation: `38 passed`; `ruff check src tests` passed.
+- Latest known validation: `40 passed`; `ruff check src tests` passed.
 
 Run checks from PowerShell:
 
@@ -38,13 +38,20 @@ Run checks from PowerShell:
   selection, staged without consulting segmentation labels.
 - The first all-class int8 pilot failed during LLaVA model initialization with
   CUDA OOM on an 8 GB RTX 3050. It failed before inference.
-- An experimental Quanto int4 model-loading path was added to lower GPU memory
-  use. It successfully loaded the model on this GPU, but first inference failed
-  because this Windows machine has no CUDA Toolkit (`nvcc`/`CUDA_HOME`) or MSVC
-  compiler (`cl.exe`). Startup now exposes pip-installed Ninja and checks for
-  the CUDA build prerequisites before model download. Install the matching
-  CUDA Toolkit and Visual C++ Build Tools, then retry the smoke run. Int4 can
-  affect accuracy and must be recorded when reporting results.
+- CUDA 12.1 compiler/runtime/CCCL redistributables are staged outside the
+  repository at `D:\Tools\CUDA\v12.1`; their SHA-256 hashes matched NVIDIA's
+  `redistrib_12.1.0.json`. `nvcc --version` reports 12.1.66. Visual Studio 2019
+  Build Tools 14.29 and its x64 environment are installed. User-level
+  `CUDA_HOME`/`CUDA_PATH` and CUDA `bin` PATH entries are configured.
+- The Quanto int4 loader gets past missing build tools, but the one-class smoke
+  still OOMs during model initialization on the 8 GB RTX 3050. Latest observed
+  failure requested 172 MiB with 4.43 GiB free. Windows PyTorch warns
+  `expandable_segments` is unsupported. No image inference has completed with
+  this configuration. Int4 can affect accuracy and must be reported.
+- An int4 CPU pilot crashed the Python process with Windows exit code
+  `-1073741819` before any predictions; CPU fallback is not currently viable.
+- Local uncommitted changes in `models.py` infer CUDA_HOME from `nvcc` and
+  activate Visual Studio's x64 environment. They pass tests, but GPU OOM remains.
 
 ## Current project edits to inspect
 
@@ -54,8 +61,8 @@ Recent local work may include:
   `batch_summary.json`; offer `--quantize int4`.
 - `src\llava_prior\models.py`: load the LLaVA language model with Quanto int4
   or int8 weights while keeping the vision components full precision; expose
-  the pip-installed Ninja executable for Quanto's extension loader and fail
-  early with a clear message if CUDA build tools are missing.
+  pip-installed Ninja, discover CUDA_HOME, activate Visual Studio x64 tools,
+  and fail clearly if CUDA build prerequisites are missing.
 - `tests\test_cli.py`: cover startup failure reporting, config overrides, and
   the int4 CLI option.
 - `configs\ablations\`: single-factor JSON overrides for layers, attention
@@ -67,10 +74,9 @@ Do not overwrite or discard these changes without checking the worktree.
 
 ## Next steps
 
-1. Install the CUDA Toolkit matching the installed PyTorch CUDA build and
-   Visual C++ Build Tools, then retry int4 one-image inference in
-   `outputs\voc-int4-smoke`. If it fails, record the exact failure; do not
-   launch the 100-image job.
+1. Single-class int4 initialization OOMs on this 8 GB GPU, and CPU int4 crashed.
+   Do not launch the 100-image job on this machine. Next either implement and
+   validate layer offload / lower-memory quantization or use a GPU with more VRAM.
 2. If the smoke run succeeds, retry an all-20-class run on the single pilot
    image, then inspect `run_metadata.json`, `predictions.json`, masks, and
    `batch_summary.json` before scaling to the 100-image sample.

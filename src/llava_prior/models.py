@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -80,9 +81,71 @@ def _ensure_ninja_on_path() -> None:
         )
 
 
+def _configure_cuda_build_environment() -> None:
+    if not os.environ.get("CUDA_HOME"):
+        nvcc = shutil.which("nvcc")
+        if nvcc:
+            os.environ["CUDA_HOME"] = str(Path(nvcc).resolve().parent.parent)
+
+    if os.name != "nt" or shutil.which("cl"):
+        return
+
+    program_files = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    vswhere = Path(program_files) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    if not vswhere.is_file():
+        raise RuntimeError("Visual C++ Build Tools are missing; install the MSVC x64 toolset")
+    installations = subprocess.run(
+        [
+            str(vswhere),
+            "-products",
+            "*",
+            "-requires",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-property",
+            "installationPath",
+            "-all",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    installations = [Path(path.strip()) for path in installations if path.strip()]
+    installations.sort(key=lambda path: 0 if "\\2019\\" in str(path) else 1)
+    vcvars = next(
+        (
+            path / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
+            for path in installations
+            if (path / "VC" / "Auxiliary" / "Build" / "vcvars64.bat").is_file()
+        ),
+        None,
+    )
+    if vcvars is None:
+        raise RuntimeError("Visual C++ Build Tools are missing the x64 environment script")
+
+    environment_output = subprocess.run(
+        [
+            os.environ.get("COMSPEC", "cmd.exe"),
+            "/d",
+            "/c",
+            "call",
+            str(vcvars),
+            "&&",
+            "set",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    for line in environment_output.splitlines():
+        if "=" in line and not line.startswith("="):
+            name, value = line.split("=", 1)
+            os.environ[name] = value
+
+
 def _ensure_quantized_kernel_build_tools(device: torch.device) -> None:
     if device.type != "cuda":
         return
+    _configure_cuda_build_environment()
     from torch.utils.cpp_extension import CUDA_HOME
 
     compiler_name = "nvcc.exe" if os.name == "nt" else "nvcc"
@@ -117,13 +180,15 @@ def _load_llava_quantized(
     import gc
     import json
 
+    _configure_cuda_build_environment()
+    _ensure_ninja_on_path()
+    _ensure_quantized_kernel_build_tools(device)
+
     from huggingface_hub import snapshot_download
     from optimum.quanto import QModuleMixin, qint4, qint8, quantize
     from safetensors import safe_open
     from transformers import AutoConfig, LlavaForConditionalGeneration
 
-    _ensure_ninja_on_path()
-    _ensure_quantized_kernel_build_tools(device)
     path = Path(snapshot_download(model_id, allow_patterns=["*.json", "*.safetensors"]))
     config = AutoConfig.from_pretrained(path, attn_implementation="eager")
     with torch.device("meta"):
@@ -179,9 +244,11 @@ class HuggingFaceLlavaBackend:
     quantize: str = "none"
 
     def __post_init__(self) -> None:
+        self.device = choose_device(self.device_name)
+        if self.quantize in {"int4", "int8"} and self.device.type == "cuda":
+            _configure_cuda_build_environment()
         from transformers import AutoProcessor, LlavaForConditionalGeneration
 
-        self.device = choose_device(self.device_name)
         torch_dtype = self._torch_dtype()
         self.processor = AutoProcessor.from_pretrained(self.model_id)
         if self.quantize in {"int4", "int8"}:

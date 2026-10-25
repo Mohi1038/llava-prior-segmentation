@@ -9,6 +9,7 @@ from PIL import Image
 
 from llava_prior.models import (
     SamPredictorBackend,
+    _configure_cuda_build_environment,
     _ensure_ninja_on_path,
     _ensure_quantized_kernel_build_tools,
     _model_key,
@@ -46,8 +47,53 @@ def test_quantized_cuda_preflight_reports_missing_build_tools(monkeypatch):
     with pytest.raises(RuntimeError, match="CUDA Toolkit") as exc_info:
         _ensure_quantized_kernel_build_tools(torch.device("cuda"))
 
-    if os.name == "nt":
-        assert "Visual C++ Build Tools" in str(exc_info.value)
+    assert "CUDA Toolkit" in str(exc_info.value)
+
+
+def test_cuda_build_environment_discovers_nvcc(monkeypatch):
+    monkeypatch.delenv("CUDA_HOME", raising=False)
+    monkeypatch.setattr(
+        "llava_prior.models.shutil.which",
+        lambda name: (
+            r"D:\CUDA\bin\nvcc.exe" if name == "nvcc" else r"C:\tools\cl.exe"
+        ),
+    )
+
+    _configure_cuda_build_environment()
+
+    assert os.environ["CUDA_HOME"] == r"D:\CUDA"
+
+
+def test_cuda_build_environment_activates_visual_studio(monkeypatch, tmp_path):
+    import subprocess
+    from types import SimpleNamespace
+
+    installer = tmp_path / "Microsoft Visual Studio" / "Installer"
+    installer.mkdir(parents=True)
+    vswhere = installer / "vswhere.exe"
+    vswhere.touch()
+    build_tools = tmp_path / "2019" / "BuildTools"
+    vcvars = build_tools / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
+    vcvars.parent.mkdir(parents=True)
+    vcvars.touch()
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
+    monkeypatch.delenv("CUDA_HOME", raising=False)
+    monkeypatch.setattr("llava_prior.models.shutil.which", lambda name: None)
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[0] == str(vswhere):
+            return SimpleNamespace(stdout=f"{build_tools}\n")
+        return SimpleNamespace(stdout="PATH=C:\\tools\nINCLUDE=C:\\include\n")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    _configure_cuda_build_environment()
+
+    assert os.environ["PATH"] == "C:\\tools"
+    assert os.environ["INCLUDE"] == "C:\\include"
+    assert calls[1][3:] == ["call", str(vcvars), "&&", "set"]
 
 
 def test_sam_selects_multimask_candidate_consistent_with_class_prior():

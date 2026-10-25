@@ -59,13 +59,18 @@ background `0` and classes in candidate-list order, `predictions.json`,
 `visualization.png`. If GPU memory is limited, install the
 quantization extra and use int4 to reduce LLaVA's language-model weight memory;
 int4 may affect inference quality. Keep SAM on CPU to leave more GPU memory for
-LLaVA. Quanto's CUDA kernels are compiled on first inference, so CUDA runs also
-need the CUDA Toolkit (`nvcc`) and, on Windows, Visual C++ Build Tools available
-to the process. The CLI checks for these prerequisites before downloading and
-loading the model:
+LLaVA; quantization does not guarantee that a 7B model fits the available VRAM.
+On an 8 GB RTX 3050, the int4 loader still ran out of GPU memory before inference,
+so the 100-image experiment has not been run on that hardware. Quanto's CUDA
+kernels are compiled on first inference, so CUDA runs also
+need the CUDA Toolkit (`nvcc`) and, on Windows, Visual C++ Build Tools installed.
+The CLI discovers `CUDA_HOME` from `nvcc` on `PATH` and activates the x64 Visual
+Studio Build Tools environment when needed. For a user-local toolkit install,
+put its `bin` directory on `PATH` before starting Python:
 
-```bash
+```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[quant]"
+$env:PATH = "D:\Tools\CUDA\v12.1\bin;$env:PATH"
 .\.venv\Scripts\llava-prior.exe image.jpg `
 	--classes dog `
 	--sam-checkpoint checkpoints\sam_vit_h_4b8939.pth `
