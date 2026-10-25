@@ -14,7 +14,7 @@ score directly with the paper's full VOC21 result.
 ## Repository and validation
 
 - Workspace: `D:\Programming\CV Project\llava-prior-segmentation`
-- Latest pushed commit: `81feecc` (`Add low-memory inference and ablation configs`)
+- Latest pushed commit: `ccae390` (`Detect local CUDA and MSVC toolchains`)
 - Local uncommitted edits may exist; inspect `git status` before changing files.
 - Latest known validation: `40 passed`; `ruff check src tests` passed.
 
@@ -50,8 +50,8 @@ Run checks from PowerShell:
   this configuration. Int4 can affect accuracy and must be reported.
 - An int4 CPU pilot crashed the Python process with Windows exit code
   `-1073741819` before any predictions; CPU fallback is not currently viable.
-- Local uncommitted changes in `models.py` infer CUDA_HOME from `nvcc` and
-  activate Visual Studio's x64 environment. They pass tests, but GPU OOM remains.
+- `models.py` now infers CUDA_HOME from `nvcc` and activates Visual Studio's
+  x64 environment automatically; this support is committed and pushed.
 
 ## Current project edits to inspect
 
