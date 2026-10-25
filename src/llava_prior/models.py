@@ -50,7 +50,7 @@ def _image_token_id(model: Any) -> int:
 _CHECKPOINT_PREFIXES = (
     ("language_model.model.", "model.language_model."),
     ("language_model.lm_head.", "lm_head."),
-    ("vision_tower.vision_model.", "model.vision_tower."),
+    ("vision_tower.vision_model.", "model.vision_tower.vision_model."),
     ("multi_modal_projector.", "model.multi_modal_projector."),
 )
 
@@ -71,6 +71,7 @@ def _load_llava_int8(model_id: str, device: torch.device, dtype: torch.dtype) ->
     is the int8 model plus a single fp16 tensor. The vision tower, projector, embeddings
     and lm_head stay in full precision because VGM prototypes are built from their features.
     """
+    import gc
     import json
 
     from huggingface_hub import snapshot_download
@@ -90,18 +91,24 @@ def _load_llava_int8(model_id: str, device: torch.device, dtype: torch.dtype) ->
     quantize(language_model, weights=qint8)
 
     for shard in sorted(set(weight_map.values())):
-        with safe_open(str(path / shard), framework="pt", device="cpu") as tensors:
+        with safe_open(str(path / shard), framework="numpy") as tensors:
             for checkpoint_key in tensors.keys():  # noqa: SIM118 (safe_open has no __iter__)
                 module_name, _, tensor_name = _model_key(checkpoint_key).rpartition(".")
                 module = model.get_submodule(module_name)
-                value = tensors.get_tensor(checkpoint_key).to(device=device, dtype=dtype)
+                # The PyTorch-backed reader can access-violate on Windows after
+                # Transformers is imported. The NumPy reader returns writable arrays.
+                array = tensors.get_tensor(checkpoint_key)
+                value = torch.from_numpy(array).to(device=device, dtype=dtype)
                 module._parameters[tensor_name] = torch.nn.Parameter(value, requires_grad=False)
                 if isinstance(module, QModuleMixin) and tensor_name == "weight":
                     module.freeze()
+                del array, value
+        del tensors
+        gc.collect()
 
     # Non-persistent buffers are absent from the checkpoint and must be rebuilt.
     language_model.rotary_emb = type(language_model.rotary_emb)(config=config.text_config, device=device)
-    embeddings = model.model.vision_tower.embeddings
+    embeddings = model.model.vision_tower.vision_model.embeddings
     embeddings.position_ids = torch.arange(embeddings.num_positions, device=device).unsqueeze(0)
     for name, tensor in [*model.named_parameters(), *model.named_buffers()]:
         if tensor.is_meta:
@@ -302,15 +309,25 @@ class SamPredictorBackend:
         from segment_anything import SamPredictor, sam_model_registry
 
         self.device = choose_device(device)
-        sam = sam_model_registry[model_type](checkpoint=str(checkpoint))
+        sam = sam_model_registry[model_type](checkpoint=None)
+        state_dict = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        sam.load_state_dict(state_dict)
         self.predictor = SamPredictor(sam.to(self.device))
         self._embedded_image: object | None = None
 
-    def predict(self, image: object, points: torch.Tensor, box: torch.Tensor | None) -> torch.Tensor:
+    def predict(
+        self,
+        image: object,
+        points: torch.Tensor,
+        box: torch.Tensor | None,
+        mask_prior: torch.Tensor,
+    ) -> torch.Tensor:
         array = np.asarray(image.convert("RGB") if hasattr(image, "convert") else image)
         if not points.numel() and box is None:
             # VGM found no foreground component; SAM cannot run without a prompt.
             return torch.zeros(array.shape[:2], dtype=torch.bool)
+        if mask_prior.shape != array.shape[:2]:
+            raise ValueError("mask_prior must match the image height and width")
         if self._embedded_image is not image:
             # The ViT-H image embedding is shared by every class query on the same image.
             self.predictor.set_image(array)
@@ -318,10 +335,22 @@ class SamPredictorBackend:
         point_array = points.detach().cpu().numpy() if points.numel() else None
         labels = np.ones(len(point_array), dtype=np.int32) if point_array is not None else None
         box_array = box.detach().cpu().numpy() if box is not None else None
-        masks, _, _ = self.predictor.predict(
+        import cv2
+
+        prior = mask_prior.detach().cpu().numpy().astype(np.uint8)
+        mask_input = cv2.resize(prior, (256, 256), interpolation=cv2.INTER_LINEAR)
+        mask_input = ((mask_input * 2.0 - 1.0) * 8.0).astype(np.float32)[None, :, :]
+        masks, scores, _ = self.predictor.predict(
             point_coords=point_array,
             point_labels=labels,
             box=box_array,
-            multimask_output=False,
+            mask_input=mask_input,
+            multimask_output=True,
         )
-        return torch.from_numpy(masks[0].copy())
+        overlaps = []
+        for mask in masks:
+            intersection = np.count_nonzero(mask & prior.astype(bool))
+            union = np.count_nonzero(mask | prior.astype(bool))
+            overlaps.append(intersection / union if union else 0.0)
+        selection_scores = np.asarray(overlaps) + np.asarray(scores) * 1e-3
+        return torch.from_numpy(masks[int(np.argmax(selection_scores))].copy())

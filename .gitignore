@@ -32,6 +32,8 @@ outputs/*
 # Large local model assets and downloaded checkpoints
 checkpoints/*
 !checkpoints/.gitkeep
+datasets/*
+!datasets/README.md
 .cache/
 .huggingface/
 

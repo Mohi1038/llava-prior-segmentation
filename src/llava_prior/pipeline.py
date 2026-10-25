@@ -31,7 +31,13 @@ class LlavaBackend(Protocol):
 
 
 class SamBackend(Protocol):
-    def predict(self, image: object, points: torch.Tensor, box: torch.Tensor | None) -> torch.Tensor: ...
+    def predict(
+        self,
+        image: object,
+        points: torch.Tensor,
+        box: torch.Tensor | None,
+        mask_prior: torch.Tensor,
+    ) -> torch.Tensor: ...
 
 
 @dataclass(frozen=True)
@@ -40,17 +46,22 @@ class ClassPrediction:
     response_map: torch.Tensor
     refined_token_mask: torch.Tensor
     sam_mask: torch.Tensor
+    sam_prior_mask: torch.Tensor | None = None
 
 
-def merge_class_masks(predictions: Sequence[ClassPrediction]) -> torch.Tensor:
+def merge_class_masks(
+    predictions: Sequence[ClassPrediction],
+    image_size: tuple[int, int] | None = None,
+) -> torch.Tensor:
     """Merge independent class masks into an indexed semantic mask.
 
     Background is encoded as zero and detected classes use their input order plus
     one. When classes overlap, the first class in the candidate list wins, making
-    the policy deterministic and reproducible.
+    the policy deterministic and reproducible. ``image_size`` preserves the
+    expected output dimensions when no classes are detected.
     """
     if not predictions:
-        return torch.zeros((0, 0), dtype=torch.int64)
+        return torch.zeros(image_size or (0, 0), dtype=torch.int64)
     shape = predictions[0].sam_mask.shape
     if len(shape) != 2:
         raise ValueError("SAM masks must have shape [height, width]")
@@ -126,6 +137,9 @@ def run_pipeline(
         )
         points = torch.from_numpy(prompts.points)
         box = torch.from_numpy(prompts.box) if prompts.box is not None else None
-        sam_mask = sam.predict(image, points, box)
-        predictions.append(ClassPrediction(observation, distance, refined, sam_mask))
+        mask_prior = torch.from_numpy(image_mask).to(torch.bool)
+        sam_mask = sam.predict(image, points, box, mask_prior)
+        predictions.append(
+            ClassPrediction(observation, distance, refined, sam_mask, mask_prior)
+        )
     return predictions

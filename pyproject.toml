@@ -25,6 +25,8 @@ dev = ["pytest>=8.0", "ruff>=0.6"]
 [project.scripts]
 llava-prior = "llava_prior.cli:main"
 llava-prior-eval = "llava_prior.evaluate:main"
+llava-prior-eval-voc = "llava_prior.evaluate:voc_main"
+llava-prior-prepare-voc = "llava_prior.voc_subset:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
