@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,23 +64,66 @@ def _model_key(checkpoint_key: str) -> str:
     return checkpoint_key
 
 
-def _load_llava_int8(model_id: str, device: torch.device, dtype: torch.dtype) -> Any:
-    """Load LLaVA with an int8 language model, quantizing one tensor at a time.
+def _ensure_ninja_on_path() -> None:
+    """Expose the pip-installed Ninja executable to PyTorch's extension loader."""
+    import ninja
+
+    binary_dir = str(Path(ninja.BIN_DIR))
+    if shutil.which("ninja") is None and binary_dir not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = os.pathsep.join(
+            part for part in (binary_dir, os.environ.get("PATH", "")) if part
+        )
+    if shutil.which("ninja") is None:
+        raise RuntimeError(
+            "Quanto inference requires the Ninja executable; install the project quant extra "
+            "and ensure its Scripts directory is available on PATH"
+        )
+
+
+def _ensure_quantized_kernel_build_tools(device: torch.device) -> None:
+    if device.type != "cuda":
+        return
+    from torch.utils.cpp_extension import CUDA_HOME
+
+    compiler_name = "nvcc.exe" if os.name == "nt" else "nvcc"
+    has_cuda_compiler = CUDA_HOME is not None and (
+        Path(CUDA_HOME) / "bin" / compiler_name
+    ).is_file()
+    missing = []
+    if not has_cuda_compiler:
+        missing.append("CUDA Toolkit (nvcc; set CUDA_HOME)")
+    if os.name == "nt" and shutil.which("cl") is None:
+        missing.append("Visual C++ Build Tools (cl.exe)")
+    if missing:
+        raise RuntimeError(
+            "Quanto CUDA inference needs " + " and ".join(missing) + " to compile its kernels"
+        )
+
+
+def _load_llava_quantized(
+    model_id: str,
+    device: torch.device,
+    dtype: torch.dtype,
+    quantization: str,
+) -> Any:
+    """Load LLaVA with a quantized language model, one tensor at a time.
 
     Transformers' QuantoConfig path materializes fp16 weights before quantizing, which
-    overflows 16 GB machines. Here the model starts on the meta device and each
-    language-model weight is quantized as soon as it lands on the device, so peak memory
-    is the int8 model plus a single fp16 tensor. The vision tower, projector, embeddings
-    and lm_head stay in full precision because VGM prototypes are built from their features.
+    can exceed available memory. Here the model starts on the meta device and each
+    language-model weight is quantized as soon as it lands on the device. The vision
+    tower, projector, embeddings and lm_head stay in full precision because VGM
+    prototypes are built from their features.
     """
     import gc
     import json
 
     from huggingface_hub import snapshot_download
-    from optimum.quanto import QModuleMixin, qint8, quantize
+    from optimum.quanto import QModuleMixin, qint4, qint8, quantize
     from safetensors import safe_open
     from transformers import AutoConfig, LlavaForConditionalGeneration
 
+    _ensure_ninja_on_path()
+    _ensure_quantized_kernel_build_tools(device)
     path = Path(snapshot_download(model_id, allow_patterns=["*.json", "*.safetensors"]))
     config = AutoConfig.from_pretrained(path, attn_implementation="eager")
     with torch.device("meta"):
@@ -88,7 +133,10 @@ def _load_llava_int8(model_id: str, device: torch.device, dtype: torch.dtype) ->
     if unmatched:
         raise RuntimeError(f"checkpoint/model key mismatch: {sorted(unmatched)[:5]}")
     language_model = model.model.language_model
-    quantize(language_model, weights=qint8)
+    weight_type = {"int4": qint4, "int8": qint8}.get(quantization)
+    if weight_type is None:
+        raise ValueError(f"unsupported quantization {quantization!r}")
+    quantize(language_model, weights=weight_type)
 
     for shard in sorted(set(weight_map.values())):
         with safe_open(str(path / shard), framework="numpy") as tensors:
@@ -136,8 +184,13 @@ class HuggingFaceLlavaBackend:
         self.device = choose_device(self.device_name)
         torch_dtype = self._torch_dtype()
         self.processor = AutoProcessor.from_pretrained(self.model_id)
-        if self.quantize == "int8":
-            self.model = _load_llava_int8(self.model_id, self.device, torch_dtype or torch.float16)
+        if self.quantize in {"int4", "int8"}:
+            self.model = _load_llava_quantized(
+                self.model_id,
+                self.device,
+                torch_dtype or torch.float16,
+                self.quantize,
+            )
         elif self.quantize == "none":
             # Eager attention is required for output_attentions; loading straight onto the
             # device avoids holding a second full copy of the weights in unified memory.

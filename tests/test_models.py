@@ -1,11 +1,18 @@
+import os
 import sys
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import torch
 from PIL import Image
 
-from llava_prior.models import SamPredictorBackend, _model_key
+from llava_prior.models import (
+    SamPredictorBackend,
+    _ensure_ninja_on_path,
+    _ensure_quantized_kernel_build_tools,
+    _model_key,
+)
 
 
 def test_model_key_maps_llava_checkpoint_prefixes():
@@ -13,6 +20,34 @@ def test_model_key_maps_llava_checkpoint_prefixes():
         _model_key("vision_tower.vision_model.encoder.layers.0.layer_norm1.weight")
         == "model.vision_tower.vision_model.encoder.layers.0.layer_norm1.weight"
     )
+
+
+def test_ensure_ninja_on_path_adds_installed_binary_directory(tmp_path, monkeypatch):
+    binary = tmp_path / "ninja.exe"
+    binary.touch()
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(
+        "ninja.BIN_DIR",
+        str(tmp_path),
+        raising=False,
+    )
+
+    _ensure_ninja_on_path()
+
+    assert str(tmp_path) in os.environ["PATH"].split(os.pathsep)
+
+
+def test_quantized_cuda_preflight_reports_missing_build_tools(monkeypatch):
+    import torch.utils.cpp_extension
+
+    monkeypatch.setattr(torch.utils.cpp_extension, "CUDA_HOME", None)
+    monkeypatch.setenv("PATH", "")
+
+    with pytest.raises(RuntimeError, match="CUDA Toolkit") as exc_info:
+        _ensure_quantized_kernel_build_tools(torch.device("cuda"))
+
+    if os.name == "nt":
+        assert "Visual C++ Build Tools" in str(exc_info.value)
 
 
 def test_sam_selects_multimask_candidate_consistent_with_class_prior():

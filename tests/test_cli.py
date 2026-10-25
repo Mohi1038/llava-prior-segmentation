@@ -150,6 +150,113 @@ def test_directory_run_processes_images_and_writes_a_summary(tmp_path, monkeypat
         assert Path(predictions[0]["prior"]).is_file()
 
 
+def test_model_initialization_failure_is_recorded_for_each_pending_image(tmp_path, monkeypatch):
+    inputs = tmp_path / "images"
+    inputs.mkdir()
+    for name in ("a.png", "b.png"):
+        Image.new("RGB", (8, 6)).save(inputs / name)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "llava-prior",
+            "images",
+            "--classes",
+            "dog",
+            "--sam-checkpoint",
+            str(tmp_path / "sam.pth"),
+            "--device",
+            "cuda",
+            "--output-dir",
+            str(tmp_path / "outputs"),
+        ],
+    )
+
+    def fail_to_load_model(**kwargs):
+        raise RuntimeError("CUDA out of memory")
+
+    monkeypatch.setattr(cli, "HuggingFaceLlavaBackend", fail_to_load_model)
+
+    with pytest.raises(SystemExit, match="1"):
+        cli.main()
+
+    summary = json.loads((tmp_path / "outputs" / "batch_summary.json").read_text())
+    assert summary["image_count"] == 2
+    assert summary["success_count"] == 0
+    assert summary["failed_count"] == 2
+    assert {item["status"] for item in summary["results"]} == {"failed"}
+    assert all("model initialization failed" in item["error"] for item in summary["results"])
+    assert not (tmp_path / "outputs" / "a" / "semantic_mask.npy").exists()
+
+
+def test_cli_exposes_int4_quantization_option(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["llava-prior", "--help"])
+
+    with pytest.raises(SystemExit, match="0"):
+        cli.main()
+
+    assert "int4" in capsys.readouterr().out
+
+
+def test_cli_config_overrides_are_applied_and_recorded(tmp_path, monkeypatch):
+    inputs = tmp_path / "images"
+    inputs.mkdir()
+    Image.new("RGB", (8, 6)).save(inputs / "sample.png")
+    config_path = tmp_path / "ablation.json"
+    config_path.write_text(
+        json.dumps({"layer_start": 4, "layer_end": 10, "attention_top_k": 3}),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "llava-prior",
+            "images",
+            "--classes",
+            "dog",
+            "--sam-checkpoint",
+            str(tmp_path / "sam.pth"),
+            "--device",
+            "cpu",
+            "--config",
+            str(config_path),
+            "--output-dir",
+            "outputs",
+        ],
+    )
+    monkeypatch.setattr(
+        cli,
+        "HuggingFaceLlavaBackend",
+        lambda **kwargs: SimpleNamespace(device="cpu"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "SamPredictorBackend",
+        lambda *args: SimpleNamespace(device="cpu"),
+    )
+    configs = []
+    monkeypatch.setattr(
+        cli,
+        "run_pipeline",
+        lambda image, classes, llava, sam, config: configs.append(config) or [],
+    )
+
+    cli.main()
+
+    assert len(configs) == 1
+    assert configs[0].layer_start == 4
+    assert configs[0].layer_end == 10
+    assert configs[0].attention_top_k == 3
+    metadata = json.loads(
+        (tmp_path / "outputs" / "sample" / "run_metadata.json").read_text()
+    )
+    assert metadata["config"]["layer_start"] == 4
+    assert metadata["config"]["candidate_classes"] == ["dog"]
+
+
 def test_directory_run_uses_per_image_class_map(tmp_path, monkeypatch):
     inputs = tmp_path / "images"
     inputs.mkdir()

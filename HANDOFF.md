@@ -1,123 +1,101 @@
-# Handoff: LLaVA Prior Segmentation
+# Project handoff: LLaVA Prior Segmentation
 
-## User goal
+## Goal and current status
 
-Reproduce the CVPR 2026 paper **The Power of Prior: Training-Free Open-Vocabulary Semantic Segmentation with LLaVA** for a computer vision course. The user wants a high-quality implementation, an explanation of the method, and a runnable experiment on `image.jpg`.
+Reproduce and evaluate the training-free FSeg-LLaVA method from **The Power of
+Prior: Training-Free Open-Vocabulary Semantic Segmentation with LLaVA**. The
+repository contains the QAP/TVR/VGM/SAM pipeline, concrete Hugging Face and SAM
+adapters, batch inference, visualization, and VOC evaluation utilities.
 
-## Paper method
+The implementation and local evaluation workflow exist, but the paper's result
+has **not** been reproduced. Do not compare the current 40-image diagnostic
+score directly with the paper's full VOC21 result.
 
-The paper proposes FSeg-LLaVA, a training-free open-vocabulary semantic segmentation pipeline:
+## Repository and validation
 
-1. **Question-answer pipeline (QAP):** for every candidate class, ask LLaVA a fixed-format question: whether the image contains the class. A positive answer must contain a yes sentence and a description sentence.
-2. **Text-visual response (TVR):** extract hidden states for image tokens and the class token from intermediate LLM layers. Compute averaged cosine distance over selected layers. The paper's strongest default for Vicuna-7B is layers 7--13. Threshold the distance map with `min(alpha * max(response), beta)`, using `alpha=0.75`, `beta=0.19` for the default setting. Use cross-attention from the description to image tokens, select low-spatial-entropy responses, average top-K, threshold by their mean, and multiply this attention mask with the distance response.
-3. **Visual generation module (VGM):** stack class response maps, assign each vision token to the winning class, compute positive and negative prototypes from LLaVA vision features, compare every token with both prototypes, and intersect the prototype mask with the class guidance mask.
-4. **SAM prompting:** upsample the token mask to image resolution, morphologically clean it, extract connected-component centroids as positive points, compute a tight bounding box, and use both point and box prompts with frozen SAM to produce the final mask.
+- Workspace: `D:\Programming\CV Project\llava-prior-segmentation`
+- Latest pushed commit: `230c2bb` (`Add VOC evaluation and inference workflows`)
+- Local uncommitted edits may exist; inspect `git status` before changing files.
+- Latest known validation: `38 passed`; `ruff check src tests` passed.
 
-The paper reports 68.0 mIoU on VOC21 using LLaVA-1.5 Vicuna-7B and ViT-H SAM. It does not require explicit background class names in the QAP stage.
+Run checks from PowerShell:
 
-## Repository state
-
-Workspace: `/Users/mohi1038/llava-prior-segmentation`
-
-The repository has no commits yet. Current untracked project files are intentional. Do not reset or discard them.
-
-Important local files:
-
-- `pyproject.toml`: package metadata, dependencies, `llava-prior` CLI entry point.
-- `README.md`: paper explanation, reproduction plan, installation, and image inference command.
-- `configs/voc21.json`: paper-default inference values.
-- `src/llava_prior/config.py`: validated `PriorSegmentationConfig` dataclass.
-- `src/llava_prior/qap.py`: fixed query rendering and permissive response parsing.
-- `src/llava_prior/response.py`: TVR cosine distance, dynamic threshold, attention selection, response filtering.
-- `src/llava_prior/prototypes.py`: semantic guidance, foreground/background prototypes, prototype/refined masks.
-- `src/llava_prior/prompts.py`: connected components, morphology, centroids, boxes.
-- `src/llava_prior/pipeline.py`: QAP -> TVR -> VGM -> SAM orchestration and `TraceBatch`/backend protocols.
-- `src/llava_prior/models.py`: concrete Hugging Face LLaVA and Segment Anything adapters.
-- `src/llava_prior/cli.py`: single-image CLI; writes one `.npy` mask per detected class and `predictions.json`.
-- `tests/test_math.py`: TVR/VGM math tests.
-- `tests/test_qap_and_prompts.py`: QAP and geometry tests.
-- `tests/test_pipeline.py`: mocked end-to-end pipeline and SAM prompt test.
-
-## Current validation
-
-Last successful validation:
-
-```text
-6 passed
-All checks passed!
-llava-prior-segmentation 0.1.0
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check src tests
 ```
 
-Commands:
+## Existing VOC results and data
 
-```bash
-.venv/bin/python -m pytest -q
-.venv/bin/python -m ruff check src tests
-.venv/bin/python -m llava_prior.cli --version
-.venv/bin/llava-prior --version
+- Official VOC 2012 archive and extracted dataset are under `datasets\VOC2012`.
+- `outputs\voc-curated` contains a 40-image class-balanced diagnostic run:
+  40/40 images completed, about 75.9 minutes, dataset mIoU 0.41558. Its
+  annotation-informed selection and per-image class maps make this diagnostic,
+  not an unbiased open-vocabulary benchmark.
+- `datasets\VOC2012\random-100` contains a deterministic, annotation-independent
+  100-image sample (seed `2026`) and queries all 20 VOC classes by design.
+- `datasets\VOC2012\random-pilot` contains the first image from the same seeded
+  selection, staged without consulting segmentation labels.
+- The first all-class int8 pilot failed during LLaVA model initialization with
+  CUDA OOM on an 8 GB RTX 3050. It failed before inference.
+- An experimental Quanto int4 model-loading path was added to lower GPU memory
+  use. It successfully loaded the model on this GPU, but first inference failed
+  because this Windows machine has no CUDA Toolkit (`nvcc`/`CUDA_HOME`) or MSVC
+  compiler (`cl.exe`). Startup now exposes pip-installed Ninja and checks for
+  the CUDA build prerequisites before model download. Install the matching
+  CUDA Toolkit and Visual C++ Build Tools, then retry the smoke run. Int4 can
+  affect accuracy and must be recorded when reporting results.
+
+## Current project edits to inspect
+
+Recent local work may include:
+
+- `src\llava_prior\cli.py`: record model initialization failures in
+  `batch_summary.json`; offer `--quantize int4`.
+- `src\llava_prior\models.py`: load the LLaVA language model with Quanto int4
+  or int8 weights while keeping the vision components full precision; expose
+  the pip-installed Ninja executable for Quanto's extension loader and fail
+  early with a clear message if CUDA build tools are missing.
+- `tests\test_cli.py`: cover startup failure reporting, config overrides, and
+  the int4 CLI option.
+- `configs\ablations\`: single-factor JSON overrides for layers, attention
+  top-K, and threshold alpha.
+- `HANDOFF.md`: refreshed project status and next steps.
+- `README.md`: describe the int4 option and the annotation-independent VOC run.
+
+Do not overwrite or discard these changes without checking the worktree.
+
+## Next steps
+
+1. Install the CUDA Toolkit matching the installed PyTorch CUDA build and
+   Visual C++ Build Tools, then retry int4 one-image inference in
+   `outputs\voc-int4-smoke`. If it fails, record the exact failure; do not
+   launch the 100-image job.
+2. If the smoke run succeeds, retry an all-20-class run on the single pilot
+   image, then inspect `run_metadata.json`, `predictions.json`, masks, and
+   `batch_summary.json` before scaling to the 100-image sample.
+3. Evaluate the 100-image run using its exact `image_ids.txt` and
+   `--require-all-candidates`. Preserve the manifest, settings, metrics, and
+   visualization outputs.
+4. Add controlled ablations (layers, thresholds, attention top-K, SAM prompts,
+   and quantization) with each run's settings recorded. Compare to an appropriate
+   baseline before making reproduction claims.
+5. Update `README.md` and this handoff with measured results and limitations.
+6. Run the test and lint commands, then commit/push only when requested.
+
+Example evaluation command after successful all-class inference:
+
+```powershell
+$vocClasses = @(
+    "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat",
+    "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person",
+    "pottedplant", "sheep", "sofa", "train", "tvmonitor"
+)
+.\.venv\Scripts\llava-prior-eval-voc.exe `
+    .\outputs\voc-random-100 `
+    .\datasets\VOC2012\VOCdevkit\VOC2012 `
+    --classes $vocClasses `
+    --split-file .\datasets\VOC2012\random-100\image_ids.txt `
+    --require-all-candidates `
+    --output .\outputs\voc-random-100\voc_metrics.json
 ```
-
-## Current local assets
-
-- `image.jpg` exists and is approximately 1.3 MB.
-- `checkpoints/sam_vit_h_4b8939.pth` exists and is approximately 1.6 GB.
-- The machine has only approximately 3.3 GB free on the current filesystem. This is not enough for a complete LLaVA-1.5-7B download plus caches and runtime overhead. Do not start another large download until disk space is freed or Hugging Face cache is moved to another volume.
-- The earlier SAM URL attempt returned a tiny AccessDenied/XML file, but the current `checkpoints/sam_vit_h_4b8939.pth` is 1.6 GB and appears to be the real checkpoint. Verify its size/hash before loading if needed.
-
-## Environment
-
-A `.venv` exists and has PyTorch, Transformers, NumPy, Pillow, OpenCV, pytest, and Ruff installed. The current environment reported approximately:
-
-- Python 3.14
-- PyTorch 2.14.1
-- Transformers 5.18.0
-- OpenCV 5.0.0
-
-SAM is an optional dependency and may still need installation:
-
-```bash
-.venv/bin/pip install -e '.[sam]'
-```
-
-The default LLaVA model ID is `llava-hf/llava-1.5-7b-hf`.
-
-## Intended run command
-
-After confirming disk space and installing the SAM extra:
-
-```bash
-.venv/bin/llava-prior image.jpg \
-  --classes person dog bicycle \
-  --llava-model llava-hf/llava-1.5-7b-hf \
-  --sam-checkpoint checkpoints/sam_vit_h_4b8939.pth \
-  --device mps \
-  --output-dir outputs/image
-```
-
-On Apple Silicon, MPS is preferred. CPU will be very slow. The 7B checkpoint needs substantial memory and disk cache space.
-
-## Known implementation risks to investigate next
-
-1. **Disk/model download:** resolve storage first. Do not blindly retry a 7B download with only 3.3 GB free. Set `HF_HOME` to a volume with enough capacity if available.
-2. **Transformers/LLaVA compatibility:** `models.py` assumes `LlavaForConditionalGeneration`, `get_image_features`, `output_hidden_states`, and `output_attentions` APIs. Test with the installed Transformers version after the model is available.
-3. **Token alignment:** `_trace()` performs a teacher-forced forward pass on `query + response`, locates class and response token subsequences, and accounts for the expanded image-token span. This is the most likely model-specific failure point.
-4. **Vision feature shape:** different LLaVA versions may return image features with or without a CLS token or with a different projector dimension. Inspect `image_features.shape` and ensure the spatial token count is a square/grid compatible with `_grid_shape()`.
-5. **Attention shape:** some implementations may return attentions from the language model with different layer/sequence dimensions. Confirm the response-to-image slices are non-empty and have shape `[description_tokens, visual_tokens]`.
-6. **SAM empty prompts:** if VGM produces no valid component, `SamPredictorBackend` currently calls SAM with both prompts absent. Add a fallback or skip class cleanly if this fails.
-7. **Evaluation is not yet implemented:** the current project runs single-image inference and has unit tests, but it does not yet download/load VOC21 or compute mIoU. The next research-grade feature should be `metrics.py` plus a VOC evaluation command.
-8. **Background/overlap policy:** `run_pipeline()` returns independent per-class masks. A benchmark evaluator should define overlap resolution and ignore-index handling explicitly.
-
-## Recommended continuation sequence
-
-1. Check disk space and SAM checkpoint integrity.
-2. Install the SAM extra and import `segment_anything`.
-3. If storage permits, download/cache LLaVA to a separate volume.
-4. Run a one-class smoke test such as `--classes person` on `image.jpg`.
-5. Add temporary shape logging around `_trace()` if model inference fails.
-6. Fix adapter compatibility issues without changing the tested TVR/VGM math.
-7. Add VOC21 dataset loading and mIoU metrics.
-8. Add qualitative overlay PNGs, runtime/memory reporting, and ablation configs.
-
-## Do not claim yet
-
-Do not claim the paper's 68.0 VOC21 result has been reproduced. The current verified result is only that the model-independent math, prompt geometry, mocked pipeline, imports, lint, and CLI entry points work. Real checkpoint inference and benchmark evaluation remain to be run.

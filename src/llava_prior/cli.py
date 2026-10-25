@@ -5,7 +5,7 @@ import json
 import platform
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -76,6 +76,22 @@ def _is_complete(output_dir: Path, image_path: Path, expected_run: dict[str, Any
         ):
             return False
     return True
+
+
+def _load_config_overrides(path: Path, parser: argparse.ArgumentParser) -> dict[str, Any]:
+    try:
+        values = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        parser.error(f"could not read --config: {exc}")
+    if not isinstance(values, dict):
+        parser.error("--config must contain a JSON object")
+    valid_fields = {item.name for item in fields(PriorSegmentationConfig)} - {
+        "candidate_classes"
+    }
+    unknown_fields = sorted(set(values) - valid_fields)
+    if unknown_fields:
+        parser.error(f"unknown --config setting(s): {unknown_fields}")
+    return values
 
 
 def _write_prediction(
@@ -179,15 +195,21 @@ def main() -> None:
         help="JSON object mapping image stems to per-image candidate-class lists",
     )
     parser.add_argument(
+        "--config",
+        type=Path,
+        help="JSON file with PriorSegmentationConfig overrides for reproducible ablations",
+    )
+    parser.add_argument(
         "--quantize",
         default="none",
-        choices=["none", "int8"],
-        help="Quantize LLaVA's language model (int8 needs optimum-quanto; useful with limited GPU memory)",
+        choices=["none", "int8", "int4"],
+        help="Quantize LLaVA's language model with optimum-quanto; int4 uses less memory but may affect accuracy",
     )
     parser.add_argument("--version", action="version", version="llava-prior-segmentation 0.1.0")
     args = parser.parse_args()
     if not args.classes or args.sam_checkpoint is None:
         parser.error("--classes and --sam-checkpoint are required")
+    config_overrides = _load_config_overrides(args.config, parser) if args.config else {}
 
     try:
         image_paths = [path.resolve() for path in _discover_images(args.image, args.recursive)]
@@ -246,7 +268,13 @@ def main() -> None:
         output_dir = _output_dir_for_image(image_path, input_path, output_root)
         label = image_path.relative_to(input_path) if input_path.is_dir() else image_path.name
         image_classes = class_map.get(image_path.stem, args.classes)
-        image_config = PriorSegmentationConfig(candidate_classes=tuple(image_classes))
+        try:
+            image_config = PriorSegmentationConfig(
+                **config_overrides,
+                candidate_classes=tuple(image_classes),
+            )
+        except (TypeError, ValueError) as exc:
+            parser.error(f"invalid --config setting: {exc}")
         expected_config = asdict(image_config)
         expected_config["candidate_classes"] = list(image_config.candidate_classes)
         expected_run = {
@@ -262,11 +290,30 @@ def main() -> None:
             (index, image_path, output_dir, label, image_classes, image_config)
         )
 
+    model_load_error = None
     if pending_images:
-        llava = HuggingFaceLlavaBackend(
-            model_id=args.llava_model, device_name=args.device, quantize=args.quantize
-        )
-        sam = SamPredictorBackend(args.sam_checkpoint, args.sam_model_type, sam_device)
+        try:
+            llava = HuggingFaceLlavaBackend(
+                model_id=args.llava_model, device_name=args.device, quantize=args.quantize
+            )
+            sam = SamPredictorBackend(args.sam_checkpoint, args.sam_model_type, sam_device)
+        except Exception as exc:  # noqa: BLE001 - report model startup failure in the batch summary
+            model_load_error = f"{type(exc).__name__}: {exc}"
+            for index, image_path, output_dir, label, _, _ in pending_images:
+                result = {
+                    "status": "failed",
+                    "image": str(image_path),
+                    "output_dir": str(output_dir),
+                    "error": f"model initialization failed: {model_load_error}",
+                }
+                print(
+                    f"[{index}/{len(image_paths)}] FAILED to initialize models for {label}: "
+                    f"{model_load_error}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                results.append(result)
+            pending_images = []
     model_load_seconds = time.perf_counter() - batch_started if pending_images else 0.0
     for index, image_path, output_dir, label, image_classes, image_config in pending_images:
         print(f"[{index}/{len(image_paths)}] Processing: {label}", flush=True)
@@ -321,6 +368,11 @@ def main() -> None:
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"Batch summary: {summary_path}")
     if summary["failed_count"]:
+        if model_load_error:
+            print(
+                f"Model initialization failed; no images were processed: {model_load_error}",
+                file=sys.stderr,
+            )
         raise SystemExit(1)
 
 

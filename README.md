@@ -57,14 +57,19 @@ separately from SAM's result. It also contains `semantic_mask.npy` with
 background `0` and classes in candidate-list order, `predictions.json`,
 `run_metadata.json` with the model/config/device/software settings, and
 `visualization.png`. If GPU memory is limited, install the
-quantization extra and keep LLaVA on CUDA while running SAM on CPU:
+quantization extra and use int4 to reduce LLaVA's language-model weight memory;
+int4 may affect inference quality. Keep SAM on CPU to leave more GPU memory for
+LLaVA. Quanto's CUDA kernels are compiled on first inference, so CUDA runs also
+need the CUDA Toolkit (`nvcc`) and, on Windows, Visual C++ Build Tools available
+to the process. The CLI checks for these prerequisites before downloading and
+loading the model:
 
 ```bash
 .\.venv\Scripts\python.exe -m pip install -e ".[quant]"
 .\.venv\Scripts\llava-prior.exe image.jpg `
 	--classes dog `
 	--sam-checkpoint checkpoints\sam_vit_h_4b8939.pth `
-	--device cuda --sam-device cpu --quantize int8 `
+	--device cuda --sam-device cpu --quantize int4 `
 	--output-dir outputs\example
 ```
 
@@ -90,7 +95,7 @@ images skipped by `--resume`:
 .\.venv\Scripts\llava-prior.exe path\to\images `
 	--classes person dog bicycle `
 	--sam-checkpoint checkpoints\sam_vit_h_4b8939.pth `
-	--device cuda --sam-device cpu --quantize int8 `
+	--device cuda --sam-device cpu --quantize int4 `
 	--recursive --output-dir outputs\voc-sample
 ```
 
@@ -112,7 +117,7 @@ $vocClasses = @(
 	--classes $vocClasses `
 	--class-map .\datasets\VOC2012\curated\class_map.json `
 	--sam-checkpoint .\checkpoints\sam_vit_h_4b8939.pth `
-	--device cuda --sam-device cpu --quantize int8 `
+	--device cuda --sam-device cpu --quantize int4 `
 	--output-dir .\outputs\voc-curated
 ```
 
@@ -169,7 +174,7 @@ $vocClasses = @(
 	.\datasets\VOC2012\random-100\images `
 	--classes $vocClasses `
 	--sam-checkpoint .\checkpoints\sam_vit_h_4b8939.pth `
-	--device cuda --sam-device cpu --quantize int8 `
+	--device cuda --sam-device cpu --quantize int4 `
 	--resume `
 	--output-dir .\outputs\voc-random-100
 ```
@@ -192,6 +197,33 @@ benchmark. To cover the full 1,449-image split with the same fixed all-class
 policy, set `--image-count 1449`, use a separate output directory, and pass its
 `image_ids.txt` to evaluation. Full-split inference can be substantially more
 expensive because each image is queried with every candidate class.
+
+### Reproducible ablations
+
+`--config` accepts a JSON object containing overrides for the segmentation
+settings. The effective config is saved into every image's `run_metadata.json`
+and participates in `--resume` matching. Example variants are provided under
+`configs/ablations/` for the TVR layer range, attention top-K, and response
+threshold. Use the same image IDs, candidate classes, model, and quantization
+for every run, and keep each variant in its own output directory:
+
+```powershell
+.\.venv\Scripts\llava-prior.exe `
+	.\datasets\VOC2012\random-100\images `
+	--classes $vocClasses `
+	--config .\configs\ablations\layers_4_10.json `
+	--sam-checkpoint .\checkpoints\sam_vit_h_4b8939.pth `
+	--device cuda --sam-device cpu --quantize int4 `
+	--resume `
+	--output-dir .\outputs\voc-random-100-layers-4-10
+```
+
+Repeat with `attention_top_k_1.json` and `threshold_alpha_0_5.json`, changing
+the output directory for each run. Evaluate each output against the same
+`random-100\image_ids.txt` using `--require-all-candidates`; this verifies the
+candidate class list, while the saved run metadata lets you record and compare
+the other settings. These variants change one setting each relative to the
+paper defaults.
 
 To evaluate only a selected subset, pass a text file containing one VOC image ID
 per line with `--split-file`. Predictions must exist under the output folder as
