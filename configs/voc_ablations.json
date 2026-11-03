@@ -1,0 +1,21 @@
+{
+  "base": {},
+  "shifted_token": {"distance": "shifted"},
+  "paper_product": {"attention_combine": "product"},
+  "no_attention": {"use_attention": false},
+  "no_prototype": {"use_prototype": false},
+  "neg_label0": {"negative_label": 0},
+  "no_negatives": {"use_negatives": false},
+  "sam_iter1": {"sam_iterations": 1},
+  "points_only": {"use_box": false},
+  "box_only": {"use_points": false},
+  "overlap_last": {"overlap_policy": "last"},
+  "qap_oracle": {"qap": "oracle"},
+  "qap_p0.35": {"qap": "p_yes", "qap_threshold": 0.35},
+  "qap_p0.65": {"qap": "p_yes", "qap_threshold": 0.65},
+  "qap_p0.8": {"qap": "p_yes", "qap_threshold": 0.8},
+  "beta0.16": {"beta": 0.16},
+  "beta0.22": {"beta": 0.22},
+  "alpha0.65": {"alpha": 0.65},
+  "alpha0.85": {"alpha": 0.85}
+}

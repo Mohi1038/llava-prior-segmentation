@@ -24,9 +24,110 @@ There is no segmentation training loop. LLaVA and SAM stay frozen; the computati
 6. **Ablations:** reproduce prompt wording, layer ranges, point versus box prompts, response-map variants, prototype-mask variants, and LLaVA model variants.
 7. **Course deliverables:** produce qualitative overlays, an experiment table, an error taxonomy, and a comparison against a CLIP baseline. Every claim should be tied to a config and saved artifact.
 
-## Status
+## Results (PASCAL VOC 2012, measured 2026-10-26/27)
 
-The implementation includes the model-independent TVR/VGM computations, real LLaVA/SAM adapters, deterministic QAP deduplication, indexed semantic-mask merging, and mIoU evaluation utilities. Model loading and benchmark data remain separate so the math can be verified without downloading LLaVA or SAM.
+All numbers are standard **VOC21 mIoU** (21 classes including background, void ignored, IoU
+accumulated over the split as in mmseg) with LLaVA-1.5-7B (`llava-hf/llava-1.5-7b-hf`, fp16) and
+SAM ViT-H on one A30 GPU. Design choices were made on a 200-image **tuning split** drawn from VOC
+*train* (`splits/voc_train_dev200.txt`, seed 0); the 1,449-image **val** split was used only for
+the final runs below.
+
+| Setting | Tuning (200 train) | **VOC val (1,449)** | Paper (val) |
+|---|---|---|---|
+| **Reproduction (`base`)** | 68.49 | **65.85** | 68.0 |
+| QAP oracle (ground-truth class list; analysis only) | 74.41 | 72.16 | – |
+| No prototype step (Eq. 10-12) | 68.74 | 65.78 | 67.3 |
+| No attention mask (D_f = D) | 66.34 | 65.49 | 67.3 |
+| Paper-text combination D_f = D · M_A (code uses a union) | 63.16 | 61.62 | – |
+| SAM points only | 62.00 | 57.70 | 61.4 |
+| SAM box only | 57.23 | 54.12 | 57.8 |
+| Class-token state taken one position early (`shifted_token`) | 47.35 | 48.57 | – |
+| LLaVA maps without SAM (`base_coarse`) | – | 18.72 | – |
+
+The reproduction is 2.2 points below the paper. Its ablations move in the paper's direction
+(box + points > points > box; the attention mask helps; the prototype step matters little).
+Possible causes of the gap, none verified: the HF-converted checkpoint and newer transformers,
+fp16 numerics, and the authors' VOC class-name file, which is not public (we query the VOC
+names; natural names such as "potted plant" scored 1.4 points lower on the tuning split).
+
+**Recognition (QAP) on val:** precision 0.822, recall 0.949 (442 false "yes", 110 false "no"
+over 1,449 × 20 queries). The oracle row shows that fixing recognition alone would add 6.3 points.
+Worst classes: chair (P 0.52), sofa, dining table, bottle.
+
+**Per-class (val):** strongest bus 91.7, motorbike 86.2, background 86.5; weakest **person 18.7**,
+dining table 34.6, sofa 35.9, chair 36.8. Person fails mainly on close-ups that fill the frame:
+LLaVA's response then covers only a face or a patch of skin, so 78% of person pixels end up as
+background (`reports/figures/qualitative_failures.png`). The person response is weak in general
+(mean peak cosine 0.24 vs 0.29-0.34 for other classes).
+
+**Attempted improvements (all tuned on the train split; none adopted):**
+
+| Idea | Tuning mIoU (base 68.49) | Outcome |
+|---|---|---|
+| Evidence filter: drop unsure "yes" classes whose map wins ≤ 2% of the grid | 68.68 | +0.19, within noise |
+| Per-class background threshold (helps weak classes such as person) | 68.37 | person +13.8 IoU, other classes lose as much |
+| Relative (max-normalised) background | 65.3 or lower | worse |
+| One SAM prompt per connected region (multi-instance classes) | 27-52 | much worse: the LLaVA region is fragmented within one object |
+| Query alias "person, people" | 67.86 | person IoU 24.4 → 12.0 |
+| Calibrated QAP threshold on P(yes) | ≤ 66.46 | worse than LLaVA's own answer |
+| α 0.65/0.85, β 0.16/0.22 | 64.3-67.5 | paper values are best |
+| Combination: overlap → later class, no prototype, no negative points | 69.72 (+1.23, 95% CI −0.5 to +3.5) | **val 65.69 vs 65.85** (−0.15, 95% CI −0.83 to +0.55): did not transfer |
+
+The combination was the only candidate above noise on the tuning split. It was fixed before val
+and run on val once, where it scored 0.16 below the reproduction. The tuning-split gain was
+sampling noise from 200 images. We therefore report the plain reproduction as the final result.
+
+### Layer study (where LLaVA's spatial information sits)
+
+Per-layer similarity maps were traced (`--per-layer`), then scored per single layer without SAM and
+for the paper's Table-3 ranges, as maps alone and with SAM (`slurm/layer_study.sh`; jobs 45099
+tuning, 45100 val). Self-check: per-layer maps averaged over 7–13 equal the reproduction's maps
+(max diff 6e-8) and reproduce its scores. VOC val, mIoU:
+
+| Layers | map only | with SAM | paper (with SAM) |
+|---|---|---|---|
+| 5–9 | 16.3 | 64.0 | 63.7 |
+| 7–9 | 17.5 | 64.4 | 65.8 |
+| 7–13 | 18.7 | 65.8 | 68.0 |
+| 7–17 | 20.1 | 65.9 | 66.8 |
+| 10–13 | 20.0 | 65.9 | 67.6 |
+| 15–22 | 31.8 | 45.5 | 49.1 |
+| 22–30 | 23.8 | 16.1 | 15.2 |
+
+With SAM the ranges follow the paper's trend (7–17 all within ~1.5 points; deep ranges collapse).
+Map-only quality peaks deeper (best single layer 22: 37.5). Middle-layer maps are small but
+precise (79% of marked pixels correct, 5% of pixels marked), so they make good SAM seeds;
+15–22 seeds give oversized SAM masks (43% of pixels foreground vs 27% true, precision 0.50).
+
+Write-up: `reports/report.pdf` (6 pages; built from `reports/report.tex`; tables/plots regenerated from the
+saved metrics by `python reports/make_assets.py`, then `tectonic -X compile report.tex`).
+
+Figures: `reports/figures/qualitative_success.png`, `reports/figures/qualitative_failures.png`.
+Per-run metrics: `runs/pred/<split>/<config>/metrics.json` (+ `confusion.npy`).
+
+### Reproducing the cluster runs
+
+```bash
+module load python/3.11 && source .venv/bin/activate          # env lives in the project
+sbatch -J trace-val slurm/run.slurm "llava-prior-voc trace --split val --out runs/traces/val_vocnames"   # ~2.8 h
+sbatch -J segment-val slurm/run.slurm "llava-prior-voc segment --split val --traces runs/traces/val_vocnames \
+    --configs configs/voc_val_core.json --out runs/pred/val_vocnames --save-coarse && \
+    llava-prior-voc eval --split val --pred runs/pred/val_vocnames/*/"                                 # ~75 min for 8 configs
+llava-prior-report table --reference base --per-class --pred runs/pred/val_vocnames/*
+llava-prior-report qap --split val --traces runs/traces/val_vocnames
+```
+
+`trace` runs LLaVA once per image and caches everything (`<id>.npz` + `<id>.json`); every
+setting in `activation.py` (`SegmentSettings`) is then a SAM-only rerun. Implementation notes:
+`src/llava_prior/trace.py` (LLaVA stage, follows the released code: square resize, `llava_v1`
+template, hidden-state indices 7..13, CLIP layer -2 features, per-head attention with
+connected-region entropy selection), `activation.py` (maps, background, prototypes, SAM), `voc.py`
+(drivers + VOC21 metric), `report.py` (tables, QAP metrics, figures).
+
+The older single-image CLI below (`llava-prior`, `pipeline.py`, `models.py`) is the earlier
+laptop implementation of the paper text. It differs from the released code (no background map,
+projected instead of CLIP features, different prompt and SAM prompting) and was never run to
+completion; use `llava-prior-voc` for results.
 
 ## Development
 

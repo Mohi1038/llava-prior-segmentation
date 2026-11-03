@@ -1,0 +1,61 @@
+{
+ "layer_maps": {
+  "id": "2008_002239",
+  "class": "dog",
+  "rule": "single-object animal image, 15-35% area, IoU>=0.85, 4th best"
+ },
+ "pipeline": {
+  "id": "2008_002536",
+  "rule": "2 GT classes, both recognised, per-image mIoU in the 70-80th percentile"
+ },
+ "qualitative": {
+  "ids": [
+   "2009_004043",
+   "2007_005547",
+   "2007_007414",
+   "2009_001299",
+   "2007_004275",
+   "2009_001215"
+  ],
+  "rule": "quantiles 95/85/70/55/40/25 of ours per-image mIoU among images with >=2 GT classes",
+  "per_image_miou": [
+   0.8658477774168083,
+   0.7192669135598415,
+   0.6364913494046295,
+   0.5645796513356048,
+   0.4790861275312893,
+   0.4039617138764342
+  ]
+ },
+ "failures": [
+  {
+   "case": "Close-up: prior covers only part of the person",
+   "id": "2007_000323",
+   "class": "person"
+  },
+  {
+   "case": "Missed class: LLaVA answered \u201cNo.\u201d",
+   "id": "2011_002121",
+   "class": "dog"
+  },
+  {
+   "case": "False \u201cyes\u201d: absent class segmented",
+   "id": "2010_002531",
+   "class": "chair"
+  },
+  {
+   "case": "Small object: 24\u00d724 prior too coarse",
+   "id": "2007_006028",
+   "class": "bicycle"
+  }
+ ],
+ "coco_examples": {
+  "ids": [
+   "000000283318",
+   "000000289343",
+   "000000568195",
+   "000000125778"
+  ],
+  "rule": "quantiles 90/70/50/30 of per-image mIoU, >=3 GT classes"
+ }
+}

@@ -1,0 +1,10 @@
+{
+  "base": {},
+  "shifted_token": {"distance": "shifted"},
+  "paper_product": {"attention_combine": "product"},
+  "no_attention": {"use_attention": false},
+  "no_prototype": {"use_prototype": false},
+  "points_only": {"use_box": false},
+  "box_only": {"use_points": false},
+  "qap_oracle": {"qap": "oracle"}
+}

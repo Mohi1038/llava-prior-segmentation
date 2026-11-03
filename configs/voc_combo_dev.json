@@ -1,0 +1,4 @@
+{
+  "combo_small": {"overlap_policy": "last", "use_prototype": false, "use_negatives": false},
+  "combo_small_bgpc": {"overlap_policy": "last", "use_prototype": false, "use_negatives": false, "background": "per_class"}
+}

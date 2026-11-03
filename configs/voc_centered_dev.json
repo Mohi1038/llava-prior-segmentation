@@ -1,0 +1,41 @@
+{
+ "c_raw": {
+  "distance": "centered"
+ },
+ "c_b0.1": {
+  "distance": "centered",
+  "beta": 0.1
+ },
+ "c_b0.3": {
+  "distance": "centered",
+  "beta": 0.3
+ },
+ "c_norm_a0.5": {
+  "distance": "centered",
+  "normalize": "median_peak",
+  "alpha": 0.5,
+  "beta": 1.0
+ },
+ "c_norm_a0.75": {
+  "distance": "centered",
+  "normalize": "median_peak",
+  "alpha": 0.75,
+  "beta": 1.0
+ },
+ "c_norm_a0.75_l13_19": {
+  "distance": "centered",
+  "normalize": "median_peak",
+  "alpha": 0.75,
+  "beta": 1.0,
+  "layer_from": 13,
+  "layer_to": 19
+ },
+ "c_norm_a0.75_l16_22": {
+  "distance": "centered",
+  "normalize": "median_peak",
+  "alpha": 0.75,
+  "beta": 1.0,
+  "layer_from": 16,
+  "layer_to": 22
+ }
+}

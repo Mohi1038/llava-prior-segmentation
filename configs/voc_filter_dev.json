@@ -1,0 +1,9 @@
+{
+  "base": {},
+  "filter_p0.7_a0.01": {"filter_p_yes": 0.7, "filter_area": 0.01},
+  "filter_p0.7_a0.02": {"filter_p_yes": 0.7, "filter_area": 0.02},
+  "filter_p0.7_a0.04": {"filter_p_yes": 0.7, "filter_area": 0.04},
+  "filter_p0.8_a0.01": {"filter_p_yes": 0.8, "filter_area": 0.01},
+  "filter_p0.8_a0.02": {"filter_p_yes": 0.8, "filter_area": 0.02},
+  "filter_p0.6_a0.02": {"filter_p_yes": 0.6, "filter_area": 0.02}
+}

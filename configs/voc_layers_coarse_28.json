@@ -1,0 +1,150 @@
+{
+ "layer_00": {
+  "layer_from": 0,
+  "layer_to": 0
+ },
+ "layer_01": {
+  "layer_from": 1,
+  "layer_to": 1
+ },
+ "layer_02": {
+  "layer_from": 2,
+  "layer_to": 2
+ },
+ "layer_03": {
+  "layer_from": 3,
+  "layer_to": 3
+ },
+ "layer_04": {
+  "layer_from": 4,
+  "layer_to": 4
+ },
+ "layer_05": {
+  "layer_from": 5,
+  "layer_to": 5
+ },
+ "layer_06": {
+  "layer_from": 6,
+  "layer_to": 6
+ },
+ "layer_07": {
+  "layer_from": 7,
+  "layer_to": 7
+ },
+ "layer_08": {
+  "layer_from": 8,
+  "layer_to": 8
+ },
+ "layer_09": {
+  "layer_from": 9,
+  "layer_to": 9
+ },
+ "layer_10": {
+  "layer_from": 10,
+  "layer_to": 10
+ },
+ "layer_11": {
+  "layer_from": 11,
+  "layer_to": 11
+ },
+ "layer_12": {
+  "layer_from": 12,
+  "layer_to": 12
+ },
+ "layer_13": {
+  "layer_from": 13,
+  "layer_to": 13
+ },
+ "layer_14": {
+  "layer_from": 14,
+  "layer_to": 14
+ },
+ "layer_15": {
+  "layer_from": 15,
+  "layer_to": 15
+ },
+ "layer_16": {
+  "layer_from": 16,
+  "layer_to": 16
+ },
+ "layer_17": {
+  "layer_from": 17,
+  "layer_to": 17
+ },
+ "layer_18": {
+  "layer_from": 18,
+  "layer_to": 18
+ },
+ "layer_19": {
+  "layer_from": 19,
+  "layer_to": 19
+ },
+ "layer_20": {
+  "layer_from": 20,
+  "layer_to": 20
+ },
+ "layer_21": {
+  "layer_from": 21,
+  "layer_to": 21
+ },
+ "layer_22": {
+  "layer_from": 22,
+  "layer_to": 22
+ },
+ "layer_23": {
+  "layer_from": 23,
+  "layer_to": 23
+ },
+ "layer_24": {
+  "layer_from": 24,
+  "layer_to": 24
+ },
+ "layer_25": {
+  "layer_from": 25,
+  "layer_to": 25
+ },
+ "layer_26": {
+  "layer_from": 26,
+  "layer_to": 26
+ },
+ "layer_27": {
+  "layer_from": 27,
+  "layer_to": 27
+ },
+ "layer_28": {
+  "layer_from": 28,
+  "layer_to": 28
+ },
+ "map_layers_4_8": {
+  "layer_from": 4,
+  "layer_to": 8
+ },
+ "map_layers_7_13": {
+  "layer_from": 7,
+  "layer_to": 13
+ },
+ "map_layers_10_16": {
+  "layer_from": 10,
+  "layer_to": 16
+ },
+ "map_layers_13_19": {
+  "layer_from": 13,
+  "layer_to": 19
+ },
+ "map_layers_16_22": {
+  "layer_from": 16,
+  "layer_to": 22
+ },
+ "map_layers_19_25": {
+  "layer_from": 19,
+  "layer_to": 25
+ },
+ "map_layers_22_28": {
+  "layer_from": 22,
+  "layer_to": 28
+ },
+ "map_layers_7_17": {
+  "layer_from": 7,
+  "layer_to": 17
+ }
+}

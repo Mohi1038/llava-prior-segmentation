@@ -40,3 +40,12 @@ datasets/*
 # Local sample media
 image.jpg
 image.png
+
+# Cluster run outputs (LLaVA trace caches, predictions, job logs)
+runs/
+logs/
+queue/
+
+# Authors' official implementation (cloned for comparison) and its pinned env
+third_party/
+.venv-official/

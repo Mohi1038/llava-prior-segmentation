@@ -1,0 +1,32 @@
+{
+ "norm_a0.5_b0.4": {
+  "normalize": "median_peak",
+  "alpha": 0.5,
+  "beta": 0.4
+ },
+ "norm_a0.5_b0.6": {
+  "normalize": "median_peak",
+  "alpha": 0.5,
+  "beta": 0.6
+ },
+ "norm_a0.5_b1.0": {
+  "normalize": "median_peak",
+  "alpha": 0.5,
+  "beta": 1.0
+ },
+ "norm_a0.75_b0.4": {
+  "normalize": "median_peak",
+  "alpha": 0.75,
+  "beta": 0.4
+ },
+ "norm_a0.75_b0.6": {
+  "normalize": "median_peak",
+  "alpha": 0.75,
+  "beta": 0.6
+ },
+ "norm_a0.75_b1.0": {
+  "normalize": "median_peak",
+  "alpha": 0.75,
+  "beta": 1.0
+ }
+}

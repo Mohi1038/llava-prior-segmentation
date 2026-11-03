@@ -23,6 +23,7 @@ def test_model_key_maps_llava_checkpoint_prefixes():
     )
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows toolchain discovery (PATH separators, vswhere)")
 def test_ensure_ninja_on_path_adds_installed_binary_directory(tmp_path, monkeypatch):
     binary = tmp_path / "ninja.exe"
     binary.touch()
@@ -50,6 +51,7 @@ def test_quantized_cuda_preflight_reports_missing_build_tools(monkeypatch):
     assert "CUDA Toolkit" in str(exc_info.value)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows toolchain discovery (PATH separators, vswhere)")
 def test_cuda_build_environment_discovers_nvcc(monkeypatch):
     monkeypatch.delenv("CUDA_HOME", raising=False)
     monkeypatch.setattr(
@@ -64,6 +66,7 @@ def test_cuda_build_environment_discovers_nvcc(monkeypatch):
     assert os.environ["CUDA_HOME"] == r"D:\CUDA"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows toolchain discovery (PATH separators, vswhere)")
 def test_cuda_build_environment_activates_visual_studio(monkeypatch, tmp_path):
     import subprocess
     from types import SimpleNamespace

@@ -1,0 +1,11 @@
+{
+  "bg_per_class": {"background": "per_class"},
+  "bg_per_class_a0.65": {"background": "per_class", "alpha": 0.65},
+  "bg_per_class_a0.85": {"background": "per_class", "alpha": 0.85},
+  "bg_per_class_b0.16": {"background": "per_class", "beta": 0.16},
+  "bg_per_class_b0.22": {"background": "per_class", "beta": 0.22},
+  "bg_rel0.6": {"background": "relative", "relative_background": 0.6},
+  "bg_rel0.7": {"background": "relative", "relative_background": 0.7},
+  "bg_rel0.8": {"background": "relative", "relative_background": 0.8},
+  "bg_rel0.9": {"background": "relative", "relative_background": 0.9}
+}

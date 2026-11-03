@@ -1,0 +1,7 @@
+{
+  "comp": {"box_mode": "components"},
+  "comp_f0.005": {"box_mode": "components", "component_min_fraction": 0.005},
+  "comp_f0.01": {"box_mode": "components", "component_min_fraction": 0.01},
+  "comp_bgpc": {"box_mode": "components", "background": "per_class"},
+  "comp_f0.005_bgpc": {"box_mode": "components", "component_min_fraction": 0.005, "background": "per_class"}
+}

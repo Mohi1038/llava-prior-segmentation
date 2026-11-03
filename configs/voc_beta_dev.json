@@ -1,0 +1,6 @@
+{
+ "beta0.13": {"beta": 0.13},
+ "beta0.16": {"beta": 0.16},
+ "beta0.22": {"beta": 0.22},
+ "beta0.16_l5_9": {"beta": 0.16, "layer_from": 5, "layer_to": 9}
+}

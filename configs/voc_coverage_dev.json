@@ -1,0 +1,47 @@
+{
+ "cov_12_17_a0.6": {
+  "coverage_from": 12,
+  "coverage_to": 17,
+  "coverage_alpha": 0.6
+ },
+ "cov_12_17_a0.75": {
+  "coverage_from": 12,
+  "coverage_to": 17,
+  "coverage_alpha": 0.75
+ },
+ "cov_12_17_a0.85": {
+  "coverage_from": 12,
+  "coverage_to": 17,
+  "coverage_alpha": 0.85
+ },
+ "cov_15_22_a0.6": {
+  "coverage_from": 15,
+  "coverage_to": 22,
+  "coverage_alpha": 0.6
+ },
+ "cov_15_22_a0.75": {
+  "coverage_from": 15,
+  "coverage_to": 22,
+  "coverage_alpha": 0.75
+ },
+ "cov_15_22_a0.85": {
+  "coverage_from": 15,
+  "coverage_to": 22,
+  "coverage_alpha": 0.85
+ },
+ "cov_17_22_a0.6": {
+  "coverage_from": 17,
+  "coverage_to": 22,
+  "coverage_alpha": 0.6
+ },
+ "cov_17_22_a0.75": {
+  "coverage_from": 17,
+  "coverage_to": 22,
+  "coverage_alpha": 0.75
+ },
+ "cov_17_22_a0.85": {
+  "coverage_from": 17,
+  "coverage_to": 22,
+  "coverage_alpha": 0.85
+ }
+}
