@@ -1,147 +1,263 @@
-# LLaVA Prior Segmentation
+<div align="center">
 
-Reproduction-oriented implementation of **The Power of Prior: Training-Free Open-Vocabulary Semantic Segmentation with LLaVA** (CVPR 2026).
+# Revisiting the Power of Prior
 
-The project investigates whether spatial information already present in a frozen vision-language model can be converted into open-vocabulary masks without task-specific training.
+### A Reproduction and Error Analysis of Training-Free Open-Vocabulary Segmentation with LLaVA
 
-## What the paper does
+**Mohit Meemrauth** · **Vyom Shah**<br>
+Indian Institute of Technology Jodhpur
 
-For each candidate class, the method has three stages:
+[![Report](https://img.shields.io/badge/Report-NeurIPS%20format%20PDF-b31b1b?style=flat-square)](reports/neurips/llava_prior_report.pdf)
+[![Paper](https://img.shields.io/badge/Original%20paper-CVPR%202026-1f6feb?style=flat-square)](https://github.com/zbf1991/FSeg-LLaVA)
+![Python](https://img.shields.io/badge/Python-3.11-3776ab?style=flat-square&logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-HF%20Transformers-ee4c2c?style=flat-square&logo=pytorch&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-55%20passed-2ea44f?style=flat-square)
 
-1. **Question-answer pipeline (QAP):** ask LLaVA whether the image contains the class. A positive answer also produces a short description.
-2. **Text-visual response (TVR):** extract hidden states for image tokens and the class token from intermediate LLM layers. Average their cosine distances, threshold low-confidence pixels, and intersect that map with a top-$K$ cross-attention mask from the generated description.
-3. **Visual generation module (VGM):** use the response maps to form foreground/background vision prototypes. Compare vision-token features to those prototypes, derive positive points, a bounding box, and a coarse mask prior. Pass all of them to SAM, then select the multimask candidate with the best overlap with the class prior.
+<br>
 
-There is no segmentation training loop. LLaVA and SAM stay frozen; the computation is inference-time feature extraction, filtering, and prompting. The paper reports its strongest settings around layers 7--13, `alpha=0.75`, and ViT-H SAM, with 68.0 mIoU on VOC21 for LLaVA-1.5 Vicuna-7B.
+<img src="docs/figures/pipeline.png" width="95%" alt="FSeg-LLaVA pipeline on a VOC validation image">
 
-## Reproduction plan
+<sub><i>The pipeline on a real VOC val image, showing our implementation's intermediate outputs: LLaVA's yes/no answers → class-token response map → reliable map → SAM prompts → SAM output.</i></sub>
 
-1. **Environment and model adapters:** pin a reproducible Python environment, support Apple Silicon MPS/CUDA/CPU, and isolate Hugging Face LLaVA and SAM loading behind adapters.
-2. **QAP:** implement strict prompt construction, robust answer parsing, and class-level caching so absent classes never enter later stages.
-3. **TVR:** capture image-token hidden states, class-token hidden states, and text-to-image attentions from selected layers; implement the paper equations with shape checks and diagnostics.
-4. **VGM and SAM:** build prototypes, denoise connected components, generate centroids and boxes, run SAM, and merge per-class masks with an explicit background policy.
-5. **Evaluation:** add VOC21 first because it is small and diagnostic, then COCO-Object, Context60, COCO-Stuff, and ADE20K. Report mIoU, per-class IoU, runtime, memory, and failure cases.
-6. **Ablations:** reproduce prompt wording, layer ranges, point versus box prompts, response-map variants, prototype-mask variants, and LLaVA model variants.
-7. **Course deliverables:** produce qualitative overlays, an experiment table, an error taxonomy, and a comparison against a CLIP baseline. Every claim should be tied to a config and saved artifact.
+</div>
 
-## Results (PASCAL VOC 2012, measured 2026-10-26/27)
+---
 
-All numbers are standard **VOC21 mIoU** (21 classes including background, void ignored, IoU
-accumulated over the split as in mmseg) with LLaVA-1.5-7B (`llava-hf/llava-1.5-7b-hf`, fp16) and
-SAM ViT-H on one A30 GPU. Design choices were made on a 200-image **tuning split** drawn from VOC
-*train* (`splits/voc_train_dev200.txt`, seed 0); the 1,449-image **val** split was used only for
-the final runs below.
+## Overview
 
-| Setting | Tuning (200 train) | **VOC val (1,449)** | Paper (val) |
-|---|---|---|---|
-| **Reproduction (`base`)** | 68.49 | **65.85** | 68.0 |
-| QAP oracle (ground-truth class list; analysis only) | 74.41 | 72.16 | – |
-| No prototype step (Eq. 10-12) | 68.74 | 65.78 | 67.3 |
-| No attention mask (D_f = D) | 66.34 | 65.49 | 67.3 |
-| Paper-text combination D_f = D · M_A (code uses a union) | 63.16 | 61.62 | – |
-| SAM points only | 62.00 | 57.70 | 61.4 |
-| SAM box only | 57.23 | 54.12 | 57.8 |
-| Class-token state taken one position early (`shifted_token`) | 47.35 | 48.57 | – |
-| LLaVA maps without SAM (`base_coarse`) | – | 18.72 | – |
+**FSeg-LLaVA** ([Zhang et al., CVPR 2026](https://github.com/zbf1991/FSeg-LLaVA)) segments images
+**without any segmentation training**. A frozen LLaVA model decides *which* classes are present and
+gives a coarse *where* for each one; the Segment Anything Model (SAM) then turns that prior into
+sharp masks.
 
-The reproduction is 2.2 points below the paper. Its ablations move in the paper's direction
-(box + points > points > box; the attention mask helps; the prototype step matters little).
-Possible causes of the gap, none verified: the HF-converted checkpoint and newer transformers,
-fp16 numerics, and the authors' VOC class-name file, which is not public (we query the VOC
-names; natural names such as "potted plant" scored 1.4 points lower on the tuning split).
+We **reimplemented the method from scratch** in Hugging Face Transformers, ran the **authors' released
+code** next to ours, and then took the remaining error apart. The aim is to understand the method,
+not to beat it.
 
-**Recognition (QAP) on val:** precision 0.822, recall 0.949 (442 false "yes", 110 false "no"
-over 1,449 × 20 queries). The oracle row shows that fixing recognition alone would add 6.3 points.
-Worst classes: chair (P 0.52), sofa, dining table, bottle.
+> [!NOTE]
+> This is a reproduction and analysis project. We do not propose a new segmentation method, and our
+> implementation does not beat the original.
 
-**Per-class (val):** strongest bus 91.7, motorbike 86.2, background 86.5; weakest **person 18.7**,
-dining table 34.6, sofa 35.9, chair 36.8. Person fails mainly on close-ups that fill the frame:
-LLaVA's response then covers only a face or a patch of skin, so 78% of person pixels end up as
-background (report Figure 8a). The person response is weak in general
-(mean peak cosine 0.24 vs 0.29-0.34 for other classes).
+### Key findings
 
-**Attempted improvements (all tuned on the train split; none adopted):**
+| | Finding |
+|:-:|---|
+| 🔁 | **It reproduces.** Ours: **65.85** mIoU, released code: **66.01**, paper: 68.0. The two implementations agree per image (Pearson *r* = 0.97), so the 2-point gap is shared, not caused by our port. |
+| 🔑 | **One hidden detail is worth 17 points.** The class token's hidden state must be read *at* the class-name token. Reading it one position early (a literal port of the `generate()` indexing) drops VOC val to 48.6. |
+| 🌍 | **It transfers within the LLaVA family.** LLaVA-1.6 Vicuna (65.02) and Mistral (66.29) work without retuning, and so does COCO-Object (39.99). Qwen2.5-VL does not (22.2), because its hidden states are strongly anisotropic. |
+| 🧩 | **Most errors are missed pixels, not confused classes.** 30% of object pixels are left as background and only 2.9% get the wrong class. Using the true class list (oracle recognition) adds +6.3 points on VOC and +10.4 on COCO. |
+| 🧠 | **Middle layers make the best SAM prompts.** Deep layers (20–22) give the best stand-alone maps but the worst SAM prompts; layers 7–13 give small, precise seeds. |
+| ❌ | **None of our 11 fixes transferred.** The only gain on the tuning split (+1.23) scored −0.15 on validation. |
 
-| Idea | Tuning mIoU (base 68.49) | Outcome |
-|---|---|---|
-| Evidence filter: drop unsure "yes" classes whose map wins ≤ 2% of the grid | 68.68 | +0.19, within noise |
-| Per-class background threshold (helps weak classes such as person) | 68.37 | person +13.8 IoU, other classes lose as much |
-| Relative (max-normalised) background | 65.3 or lower | worse |
-| One SAM prompt per connected region (multi-instance classes) | 27-52 | much worse: the LLaVA region is fragmented within one object |
-| Query alias "person, people" | 67.86 | person IoU 24.4 → 12.0 |
-| Calibrated QAP threshold on P(yes) | ≤ 66.46 | worse than LLaVA's own answer |
-| α 0.65/0.85, β 0.16/0.22 | 64.3-67.5 | paper values are best |
-| Combination: overlap → later class, no prototype, no negative points | 69.72 (+1.23, 95% CI −0.5 to +3.5) | **val 65.69 vs 65.85** (−0.15, 95% CI −0.83 to +0.55): did not transfer |
+---
 
-The combination was the only candidate above noise on the tuning split. It was fixed before val
-and run on val once, where it scored 0.16 below the reproduction. The tuning-split gain was
-sampling noise from 200 images. We therefore report the plain reproduction as the final result.
+## Results
 
-### Layer study (where LLaVA's spatial information sits)
+All numbers are **mIoU** with 95% bootstrap confidence intervals over images. Design choices were made on a
+separate **200-image tuning split** taken from VOC *train*; the validation sets were used only for the final numbers.
 
-Per-layer similarity maps were traced (`--per-layer`), then scored per single layer without SAM and
-for the paper's Table-3 ranges, as maps alone and with SAM (`slurm/layer_study.sh`; jobs 45099
-tuning, 45100 val). Self-check: per-layer maps averaged over 7–13 equal the reproduction's maps
-(max diff 6e-8) and reproduce its scores. VOC val, mIoU:
+| System | VLM | Maps only<sup>†</sup> | **Full pipeline** | Oracle recognition<sup>†</sup> |
+|---|---|:-:|:-:|:-:|
+| ***PASCAL VOC 2012 val** (1,449 images)* | | | | |
+| Paper (reported) | LLaVA-1.5-7B | – | 68.0 | – |
+| Released code (re-run by us) | LLaVA-1.5-7B | – | 66.01 <sub>[64.3, 67.5]</sub> | – |
+| **Ours** | LLaVA-1.5-7B | 18.72 | **65.85** <sub>[64.1, 67.3]</sub> | 72.16 |
+| Ours | LLaVA-1.6 Vicuna-7B | 16.45 | 65.02 <sub>[63.4, 66.8]</sub> | 69.46 |
+| Ours (β = 0.16) | LLaVA-1.6 Mistral-7B | 19.90 | 66.29 <sub>[64.5, 67.9]</sub> | 70.00 |
+| ***COCO-Object val2017** (5,000 images)* | | | | |
+| **Ours** | LLaVA-1.5-7B | 18.40 | **39.99** <sub>[38.8, 41.0]</sub> | 50.41 |
 
-| Layers | map only | with SAM | paper (with SAM) |
-|---|---|---|---|
+<sub>† Diagnostic controls, not methods: <i>maps only</i> scores LLaVA's coarse map without SAM; <i>oracle recognition</i> replaces LLaVA's yes/no answers with the ground-truth class list.</sub>
+
+<p align="center"><img src="docs/figures/main.png" width="90%" alt="Main results with confidence intervals"></p>
+
+### One example per class
+
+The example for each class is its **median-IoU** object, so each one is a typical case for that class,
+not a cherry-picked success.
+
+<p align="center"><img src="docs/figures/class_gallery.png" width="95%" alt="One example per VOC class"></p>
+
+<p align="center"><img src="docs/figures/per_class.png" width="90%" alt="Per-class IoU on VOC val"></p>
+
+---
+
+## What matters inside the pipeline
+
+<table>
+<tr>
+<td width="50%"><img src="docs/figures/ablation_examples.png" alt="Ablations on the same images"></td>
+<td width="50%">
+
+| Setting | VOC val mIoU |
+|---|:-:|
+| **Full reproduction** | **65.85** |
+| No prototype step | 65.78 |
+| No attention mask | 65.49 |
+| Paper-text product `D·M_A` (code uses a union) | 61.62 |
+| SAM points only | 57.70 |
+| SAM box only | 54.12 |
+| Class token read one position early | 48.57 |
+| LLaVA maps without SAM | 18.72 |
+
+SAM adds **47 points** over LLaVA's maps. Two details that are *not in the paper text*
+(union vs. product, token position) matter more than any ablation the paper lists.
+
+</td>
+</tr>
+</table>
+
+---
+
+## Where the spatial information sits: layer study
+
+<p align="center"><img src="docs/figures/layers.png" width="90%" alt="Layer study"></p>
+
+| Layers | Map only | With SAM | Paper (with SAM) |
+|:-:|:-:|:-:|:-:|
 | 5–9 | 16.3 | 64.0 | 63.7 |
 | 7–9 | 17.5 | 64.4 | 65.8 |
-| 7–13 | 18.7 | 65.8 | 68.0 |
+| **7–13** | 18.7 | **65.8** | **68.0** |
 | 7–17 | 20.1 | 65.9 | 66.8 |
 | 10–13 | 20.0 | 65.9 | 67.6 |
 | 15–22 | 31.8 | 45.5 | 49.1 |
 | 22–30 | 23.8 | 16.1 | 15.2 |
 
-With SAM the ranges follow the paper's trend (7–17 all within ~1.5 points; deep ranges collapse).
-Map-only quality peaks deeper (best single layer 22: 37.5). Middle-layer maps are small but
-precise (79% of marked pixels correct, 5% of pixels marked), so they make good SAM seeds;
-15–22 seeds give oversized SAM masks (43% of pixels foreground vs 27% true, precision 0.50).
+Middle-layer maps mark only 5% of pixels, but 79% of those are correct, so SAM gets reliable seeds.
+Deep-layer maps are better on their own but too imprecise as prompts, so SAM's output collapses:
 
-Write-up: `reports/neurips/llava_prior_report.pdf` (NeurIPS 2025 format, authors Mohit Meemrauth and
-Vyom Shah; copy in `Neurips Styles/`). Rebuild with `bash reports/neurips/build.sh`: statistics
-(`compute_stats.py`, optional `--stats`), figures (`make_figures.py`, `make_extra_figures.py`) and the PDF
-(tectonic), all from the saved runs.
-Per-run metrics: `runs/pred/<split>/<config>/metrics.json` (+ `confusion.npy`).
+<p align="center"><img src="docs/figures/layer_examples.png" width="85%" alt="Layer ranges: map vs SAM output"></p>
 
-### Reproducing the cluster runs
+---
+
+## Error analysis
+
+<table>
+<tr>
+<td width="50%"><img src="docs/figures/recognition.png" alt="Recognition errors"></td>
+<td width="50%"><img src="docs/figures/errors.png" alt="Where the error comes from"></td>
+</tr>
+<tr>
+<td><sub><b>Recognition.</b> LLaVA-1.5 answers "yes" wrongly 442 times on VOC (precision 0.82, recall 0.95). False "yes" answers cluster on furniture in indoor scenes (chair, table, sofa, bottle). On COCO, precision falls to 0.64.</sub></td>
+<td><sub><b>Missed pixels, not confused classes.</b> 67% of object pixels are labelled correctly, 30% are left as background, and only 2.9% get the wrong class. Small objects (&lt;1% of the image) fall between the 24×24 grid cells.</sub></td>
+</tr>
+</table>
+
+### Failure types (with LLaVA's verbatim answers)
+
+<p align="center"><img src="docs/figures/failures.png" width="85%" alt="Failure types"></p>
+
+<details>
+<summary><b>More examples:</b> oracle recognition, LLaVA-1.6 Mistral on persons, COCO-Object</summary>
+<br>
+
+**What oracle recognition fixes.** It removes falsely affirmed classes and restores rejected ones, but it does not fix incomplete extent.
+<p align="center"><img src="docs/figures/oracle_examples.png" width="90%"></p>
+
+**Large persons: LLaVA-1.5 vs. LLaVA-1.6 Mistral.** Mistral roughly doubles person IoU (40 vs. 19).
+<p align="center"><img src="docs/figures/mistral_person.png" width="90%"></p>
+
+**COCO-Object examples** at fixed percentiles of per-image mIoU.
+<p align="center"><img src="docs/figures/coco_examples.png" width="90%"></p>
+
+</details>
+
+---
+
+## What did not work
+
+<table>
+<tr>
+<td width="45%"><img src="docs/figures/attempts.png" alt="Improvement attempts"></td>
+<td>
+
+Each attempt targeted a measured error source and was **chosen on the tuning split only**:
+
+- **Recognition:** evidence filter, calibrated *P*(yes) thresholds, query alias "person, people"
+- **Incomplete prior:** per-class / relative backgrounds, extended SAM box, one SAM prompt per region
+- **Representation:** map normalisation, hidden-state centring
+
+The only gain above noise (+1.23, a combination of three changes) was frozen and run **once** on
+val, where it scored **−0.15**. The gain came from sampling noise in the 200-image split, so the final result is the
+plain reproduction.
+
+</td>
+</tr>
+</table>
+
+---
+
+## Repository layout
+
+```
+llava-prior-segmentation/
+├── src/llava_prior/        # the implementation
+│   ├── trace.py            #   LLaVA stage: answers, P(yes), per-layer maps, attention, CLIP features
+│   ├── activation.py       #   response maps, background, prototypes, SAM prompting
+│   ├── voc.py              #   drivers (trace / segment / eval) + VOC21 metric
+│   ├── qwen.py             #   Qwen2.5-VL adapter
+│   └── report.py           #   tables, QAP metrics, figures
+├── configs/                # every setting in the report is a JSON config here
+├── splits/                 # 200-image tuning split (VOC train, seed 0)
+├── slurm/                  # cluster job scripts (run.slurm, layer_study.sh, official.sh)
+├── scripts/                # COCO-Object builder, trace checks, job queue runner
+├── tests/                  # 55 unit tests (pytest)
+├── reports/neurips/        # the report: LaTeX source, figure scripts, stats, PDF
+├── docs/figures/           # figures used in this README
+└── Neurips Styles/         # NeurIPS 2025 style files + final report PDF
+```
+
+---
+
+## Reproducing the results
+
+The cluster runs used one NVIDIA A30 (24 GB). LLaVA is traced **once** per image and cached; every
+ablation after that is a SAM-only rerun that takes minutes.
 
 ```bash
-module load python/3.11 && source .venv/bin/activate          # env lives in the project
-sbatch -J trace-val slurm/run.slurm "llava-prior-voc trace --split val --out runs/traces/val_vocnames"   # ~2.8 h
-sbatch -J segment-val slurm/run.slurm "llava-prior-voc segment --split val --traces runs/traces/val_vocnames \
-    --configs configs/voc_val_core.json --out runs/pred/val_vocnames --save-coarse && \
-    llava-prior-voc eval --split val --pred runs/pred/val_vocnames/*/"                                 # ~75 min for 8 configs
+# environment
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev,sam]'
+.venv/bin/pytest                                   # 55 passed, 3 skipped
+
+# 1) trace LLaVA on VOC val (~2.8 GPU-h)
+llava-prior-voc trace --split val --out runs/traces/val_vocnames
+
+# 2) segment with SAM for every config, then evaluate (~75 min for 8 configs)
+llava-prior-voc segment --split val --traces runs/traces/val_vocnames \
+    --configs configs/voc_val_core.json --out runs/pred/val_vocnames --save-coarse
+llava-prior-voc eval --split val --pred runs/pred/val_vocnames/*/
+
+# 3) tables and recognition metrics
 llava-prior-report table --reference base --per-class --pred runs/pred/val_vocnames/*
 llava-prior-report qap --split val --traces runs/traces/val_vocnames
+
+# 4) rebuild every figure and the PDF report from the saved runs
+bash reports/neurips/build.sh            # add --stats to recompute statistics first
 ```
 
-`trace` runs LLaVA once per image and caches everything (`<id>.npz` + `<id>.json`); every
-setting in `activation.py` (`SegmentSettings`) is then a SAM-only rerun. Implementation notes:
-`src/llava_prior/trace.py` (LLaVA stage, follows the released code: square resize, `llava_v1`
-template, hidden-state indices 7..13, CLIP layer -2 features, per-head attention with
-connected-region entropy selection), `activation.py` (maps, background, prototypes, SAM), `voc.py`
-(drivers + VOC21 metric), `report.py` (tables, QAP metrics, figures).
+On SLURM, wrap each command in `sbatch slurm/run.slurm "<command>"`. Per-run metrics are written to
+`runs/pred/<split>/<config>/metrics.json` (with `confusion.npy`).
 
-The older single-image CLI below (`llava-prior`, `pipeline.py`, `models.py`) is the earlier
-laptop implementation of the paper text. It differs from the released code (no background map,
-projected instead of CLIP features, different prompt and SAM prompting) and was never run to
-completion; use `llava-prior-voc` for results.
+**Data and weights** are not in Git: PASCAL VOC 2012 trainval (see [`datasets/README.md`](datasets/README.md)),
+COCO val2017 (converted to COCO-Object with `scripts/prepare_coco_object.py`), `llava-hf/llava-1.5-7b-hf`,
+and SAM ViT-H (`sam_vit_h_4b8939.pth`).
 
-## Development
+### Implementation facts needed to reproduce FSeg-LLaVA
 
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
-.venv/bin/pytest
-```
+| Component | Paper text | Released code (used here) | Cost of the paper-text version |
+|---|---|---|:-:|
+| Combining `D_c` with `M_A` | product | union of threshold mask and `M_A` | −4.23 |
+| SAM refinement | single prompt | 3 rounds, previous mask logits fed back | −3.01 (tuning) |
+| Class-token hidden state | not specified | read **at** the class-name token | −17.27 |
 
-Install SAM support before running the real model path:
+<details>
+<summary><b>Older single-image CLI</b> (<code>llava-prior</code>, laptop implementation of the paper text)</summary>
+<br>
 
-```bash
-.venv/bin/pip install -e '.[sam]'
-```
+The commands below belong to the earlier laptop implementation (`llava-prior`, `pipeline.py`,
+`models.py`). It follows the paper text, not the released code (no background map, projected instead
+of CLIP features, different prompt and SAM prompting), and was never run to completion. Use
+`llava-prior-voc` for results.
 
 Run one image after downloading a LLaVA checkpoint and a SAM checkpoint:
 
@@ -342,3 +458,27 @@ configuration is recorded in [configs/voc21.json](configs/voc21.json).
 The official VOC 2012 train/validation archive can be stored locally under
 `datasets/VOC2012`; see [datasets/README.md](datasets/README.md) for its source,
 contents, and label details. Dataset files are excluded from Git.
+
+</details>
+
+---
+
+## Acknowledgements
+
+We thank the authors of [FSeg-LLaVA](https://github.com/zbf1991/FSeg-LLaVA) for releasing their code,
+and IIT Jodhpur for access to its GPU cluster. This project builds on
+[LLaVA](https://github.com/haotian-liu/LLaVA), [Segment Anything](https://github.com/facebookresearch/segment-anything),
+[PASCAL VOC](http://host.robots.ox.ac.uk/pascal/VOC/) and [COCO](https://cocodataset.org/).
+
+## Citation
+
+If you use this reproduction, please cite the original paper:
+
+```bibtex
+@inproceedings{zhang2026prior,
+  title     = {The Power of Prior: Training-Free Open-Vocabulary Semantic Segmentation with LLaVA},
+  author    = {Zhang and others},
+  booktitle = {CVPR},
+  year      = {2026}
+}
+```
