@@ -7,11 +7,9 @@
 **Mohit Meemrauth** · **Vyom Shah**<br>
 Indian Institute of Technology Jodhpur
 
-[![Report](https://img.shields.io/badge/Report-NeurIPS%20format%20PDF-b31b1b?style=flat-square)](reports/neurips/llava_prior_report.pdf)
 [![Paper](https://img.shields.io/badge/Original%20paper-CVPR%202026-1f6feb?style=flat-square)](https://github.com/zbf1991/FSeg-LLaVA)
 ![Python](https://img.shields.io/badge/Python-3.11-3776ab?style=flat-square&logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-HF%20Transformers-ee4c2c?style=flat-square&logo=pytorch&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-55%20passed-2ea44f?style=flat-square)
 
 <br>
 
@@ -42,12 +40,12 @@ not to beat it.
 
 | | Finding |
 |:-:|---|
-| 🔁 | **It reproduces.** Ours: **65.85** mIoU, released code: **66.01**, paper: 68.0. The two implementations agree per image (Pearson *r* = 0.97), so the 2-point gap is shared, not caused by our port. |
-| 🔑 | **One hidden detail is worth 17 points.** The class token's hidden state must be read *at* the class-name token. Reading it one position early (a literal port of the `generate()` indexing) drops VOC val to 48.6. |
-| 🌍 | **It transfers within the LLaVA family.** LLaVA-1.6 Vicuna (65.02) and Mistral (66.29) work without retuning, and so does COCO-Object (39.99). Qwen2.5-VL does not (22.2), because its hidden states are strongly anisotropic. |
-| 🧩 | **Most errors are missed pixels, not confused classes.** 30% of object pixels are left as background and only 2.9% get the wrong class. Using the true class list (oracle recognition) adds +6.3 points on VOC and +10.4 on COCO. |
-| 🧠 | **Middle layers make the best SAM prompts.** Deep layers (20–22) give the best stand-alone maps but the worst SAM prompts; layers 7–13 give small, precise seeds. |
-| ❌ | **None of our 11 fixes transferred.** The only gain on the tuning split (+1.23) scored −0.15 on validation. |
+| 1. | **It reproduces.** Ours: **65.85** mIoU, released code: **66.01**, paper: 68.0. The two implementations agree per image (Pearson *r* = 0.97), so the 2-point gap is shared, not caused by our port. |
+| 2. | **One hidden detail is worth 17 points.** The class token's hidden state must be read *at* the class-name token. Reading it one position early (a literal port of the `generate()` indexing) drops VOC val to 48.6. |
+| 3. | **It transfers within the LLaVA family.** LLaVA-1.6 Vicuna (65.02) and Mistral (66.29) work without retuning, and so does COCO-Object (39.99). Qwen2.5-VL does not (22.2), because its hidden states are strongly anisotropic. |
+| 4. | **Most errors are missed pixels, not confused classes.** 30% of object pixels are left as background and only 2.9% get the wrong class. Using the true class list (oracle recognition) adds +6.3 points on VOC and +10.4 on COCO. |
+| 5. | **Middle layers make the best SAM prompts.** Deep layers (20–22) give the best stand-alone maps but the worst SAM prompts; layers 7–13 give small, precise seeds. |
+| 6. | **None of our 11 fixes transferred.** The only gain on the tuning split (+1.23) scored −0.15 on validation. |
 
 ---
 
