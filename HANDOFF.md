@@ -13,7 +13,7 @@ transferred: the only tuning-split gain (+1.23, a three-setting combination) sco
 
 **Layer study (val, jobs 45099/45100):** with SAM the paper's Table-3 trend reproduces; map-only
 quality peaks at layers 17-22, while layers 7-13 give the most precise seeds for SAM.
-**Write-up:** `reports/report.pdf` (author names still a placeholder; ask the user).
+**Write-up:** `reports/neurips/llava_prior_report.pdf` (NeurIPS format; authors Mohit Meemrauth, Vyom Shah).
 
 ## Where things are (college cluster)
 
@@ -28,7 +28,6 @@ quality peaks at layers 17-22, while layers 7-13 give the most precise seeds for
   COCO was not approved for download.
 - Caches: `runs/traces/{dev_vocnames,dev_natural,dev_person_people,val_vocnames}` (LLaVA outputs,
   ~2.8 GPU-h for val); predictions + `metrics.json` per config in `runs/pred/`.
-  `runs/pred/_stale/` holds a broken-baseline run; see its README and do not report from it.
 
 ## Key findings to keep
 
@@ -62,8 +61,8 @@ module load python/3.11
 ## Extension results (queue resumed 2026-11-02, all tasks done 2026-11-03)
 
 The hold was lifted on 2026-11-02 and the queue ran every remaining task (jobs 46289-46493, each
-COMPLETED on its first attempt). The queue runner was stopped on 2026-11-04 (nothing left to run);
-`queue/` keeps the state, log and STATUS. Results:
+COMPLETED on its first attempt). The queue runner was stopped on 2026-11-04 (nothing left to run); its
+state directory was removed in the 2026-11-12 cleanup. Results:
 
 | Run | Split | mIoU | Oracle recognition |
 |---|---|---|---|

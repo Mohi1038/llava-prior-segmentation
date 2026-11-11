@@ -57,7 +57,7 @@ Worst classes: chair (P 0.52), sofa, dining table, bottle.
 **Per-class (val):** strongest bus 91.7, motorbike 86.2, background 86.5; weakest **person 18.7**,
 dining table 34.6, sofa 35.9, chair 36.8. Person fails mainly on close-ups that fill the frame:
 LLaVA's response then covers only a face or a patch of skin, so 78% of person pixels end up as
-background (`reports/figures/qualitative_failures.png`). The person response is weak in general
+background (report Figure 8a). The person response is weak in general
 (mean peak cosine 0.24 vs 0.29-0.34 for other classes).
 
 **Attempted improvements (all tuned on the train split; none adopted):**
@@ -99,10 +99,10 @@ Map-only quality peaks deeper (best single layer 22: 37.5). Middle-layer maps ar
 precise (79% of marked pixels correct, 5% of pixels marked), so they make good SAM seeds;
 15–22 seeds give oversized SAM masks (43% of pixels foreground vs 27% true, precision 0.50).
 
-Write-up: `reports/report.pdf` (6 pages; built from `reports/report.tex`; tables/plots regenerated from the
-saved metrics by `python reports/make_assets.py`, then `tectonic -X compile report.tex`).
-
-Figures: `reports/figures/qualitative_success.png`, `reports/figures/qualitative_failures.png`.
+Write-up: `reports/neurips/llava_prior_report.pdf` (NeurIPS 2025 format, authors Mohit Meemrauth and
+Vyom Shah; copy in `Neurips Styles/`). Rebuild with `bash reports/neurips/build.sh`: statistics
+(`compute_stats.py`, optional `--stats`), figures (`make_figures.py`, `make_extra_figures.py`) and the PDF
+(tectonic), all from the saved runs.
 Per-run metrics: `runs/pred/<split>/<config>/metrics.json` (+ `confusion.npy`).
 
 ### Reproducing the cluster runs
